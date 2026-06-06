@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>StormSense AI Pro - 1-Hour Forecast Prediction</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+            min-height: 100vh;
+            background: linear-gradient(145deg, #0f172a 0%, #1e293b 100%);
+            color: #f8fafc;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        .particles {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        .particle {
+            position: absolute;
+            background: rgba(56, 189, 248, 0.2);
+            border-radius: 50%;
+            filter: blur(1px);
+            animation: driftUp linear infinite;
+        }
+
+        @keyframes driftUp {
+            0% { transform: translateY(100vh) scale(0.2); opacity: 0; }
+            20% { opacity: 0.6; }
+            80% { opacity: 0.4; }
+            100% { transform: translateY(-20vh) scale(0.8); opacity: 0; }
+        }
+
+        .container {
+            position: relative;
+            z-index: 2;
+            max-width: 760px;
+            margin: 1.5rem auto;
+            padding: 0 1rem;
+        }
+
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(16px);
+            border-radius: 2.5rem;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(115deg, #0f172a, #1e3a8a);
+            padding: 1.6rem 1.5rem;
+            text-align: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .header h1 {
+            font-size: 1.9rem;
+            font-weight: 800;
+            color: #ffffff;
+            text-shadow: 0 0 12px rgba(56, 189, 248, 0.4);
+        }
+
+        .header p {
+            color: #94a3b8;
+            font-weight: 500;
+            margin-top: 2px;
+        }
+
+        .badge-row {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            margin-top: 12px;
+            flex-wrap: wrap;
+        }
+
+        .warning-chip {
+            background: rgba(245, 158, 11, 0.15);
+            color: #fbbf24;
+            padding: 5px 16px;
+            border-radius: 60px;
+            font-weight: 700;
+            font-size: 0.7rem;
+            border: 1px solid rgba(245, 158, 11, 0.3);
+        }
+
+        .api-chip {
+            background: rgba(56, 189, 248, 0.15);
+            color: #38bdf8;
+            padding: 5px 16px;
+            border-radius: 60px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+
+        .location-panel {
+            padding: 1.6rem;
+            background: rgba(15, 23, 42, 0.4);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        }
+
+        .autocomplete-wrapper { position: relative; flex: 1; }
+        .input-group { display: flex; gap: 12px; margin-bottom: 1rem; flex-wrap: wrap; }
+        .input-group input {
+            width: 100%;
+            padding: 14px 20px;
+            border: 2px solid #334155;
+            border-radius: 60px;
+            background: #0f172a;
+            font-size: 1rem;
+            font-weight: 500;
+            color: #f8fafc;
+            transition: all 0.2s;
+        }
+        .input-group input:focus { outline: none; border-color: #38bdf8; box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2); }
+        .suggestions-list {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(12px);
+            border-radius: 1.2rem;
+            margin-top: 8px;
+            max-height: 280px;
+            overflow-y: auto;
+            z-index: 100;
+            border: 1px solid #334155;
+        }
+        .suggestion-item {
+            padding: 12px 18px;
+            cursor: pointer;
+            color: #cbd5e1;
+            border-bottom: 1px solid #1e293b;
+            display: flex;
+            gap: 10px;
+            font-weight: 500;
+        }
+        .suggestion-item:hover { background: #1e293b; color: #ffffff; }
+        .suggestion-name { font-weight: 700; color: #38bdf8; }
+        .btn {
+            padding: 12px 26px;
+            border-radius: 60px;
+            font-weight: 700;
+            border: none;
+            cursor: pointer;
+            background: linear-gradient(95deg, #3b82f6, #8b5cf6);
+            color: white;
+            font-size: 0.9rem;
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        }
+        .btn-location { background: #334155; box-shadow: none; border: 1px solid #475569; }
+        .btn:hover { transform: translateY(-2px); filter: brightness(1.1); }
+
+        .loading-state { text-align: center; padding: 3rem; display: none; }
+        .spinner {
+            width: 56px;
+            height: 56px;
+            border: 4px solid #334155;
+            border-top: 4px solid #38bdf8;
+            border-radius: 50%;
+            margin: 0 auto 1rem auto;
+            animation: spin 0.9s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .weather-core { padding: 1.5rem; }
+        .hero-weather {
+            background: linear-gradient(125deg, #1e293b, #0f172a);
+            border-radius: 2rem;
+            padding: 1.5rem;
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+        .condition-text { font-size: 1.3rem; font-weight: 600; color: #38bdf8; }
+        .hero-temp { font-size: 3.8rem; font-weight: 800; color: #ffffff; margin: 0.3rem 0; }
+        .location-name-light { color: #94a3b8; font-weight: 500; }
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1rem;
+            margin: 1.5rem 0;
+        }
+        .metric-card {
+            background: rgba(15, 23, 42, 0.5);
+            border-radius: 1.5rem;
+            padding: 1rem;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.04);
+        }
+        .metric-label { font-size: 0.75rem; text-transform: uppercase; color: #94a3b8; font-weight: 600; }
+        .metric-value { font-size: 1.5rem; font-weight: 800; color: #f1f5f9; font-family: monospace; }
+
+        .forecast-panel {
+            background: linear-gradient(135deg, #0f172a, #1e293b);
+            border-radius: 1.5rem;
+            padding: 1.2rem;
+            margin: 1rem 0;
+            border: 1px solid #334155;
+        }
+        .forecast-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0.8rem;
+            margin-top: 0.8rem;
+        }
+        .forecast-hour {
+            text-align: center;
+            background: rgba(0,0,0,0.3);
+            border-radius: 1rem;
+            padding: 0.6rem;
+        }
+        .forecast-hour .hour { font-size: 0.7rem; color: #94a3b8; }
+        .forecast-hour .temp { font-size: 1.2rem; font-weight: 700; color: #38bdf8; }
+        .forecast-hour .rain { font-size: 0.7rem; color: #fbbf24; }
+        .forecast-hour .wind-small { font-size: 0.65rem; color: #94a3b8; }
+
+        .prediction-vault {
+            background: #1e293b;
+            border-radius: 2rem;
+            padding: 1.4rem;
+            margin: 1rem 0;
+            border-left: 8px solid #f59e0b;
+        }
+        .severity-severe { border-left-color: #ef4444; background: rgba(239, 68, 68, 0.08); }
+        .severity-warning { border-left-color: #f97316; background: rgba(249, 115, 22, 0.08); }
+        .severity-safe { border-left-color: #10b981; background: rgba(16, 185, 129, 0.08); }
+
+        .gauge-container { display: flex; justify-content: center; margin: 0.5rem 0; }
+        .gauge-svg { width: 170px; height: auto; }
+        .risk-breakdown {
+            background: rgba(15, 23, 42, 0.6);
+            border-radius: 1.2rem;
+            padding: 0.9rem;
+            margin-top: 0.8rem;
+            font-size: 0.75rem;
+            border-left: 3px solid #38bdf8;
+        }
+        .air-card {
+            background: rgba(30, 41, 59, 0.4);
+            border-radius: 1.5rem;
+            padding: 1.2rem;
+            margin: 1rem 0;
+        }
+        .pollutant-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0.7rem;
+            margin-top: 0.8rem;
+        }
+        .pollutant-grid div {
+            background: #0f172a;
+            padding: 8px;
+            border-radius: 1rem;
+            text-align: center;
+            font-size: 0.8rem;
+        }
+        .aqi-tag { display: inline-block; padding: 4px 12px; border-radius: 30px; font-weight: 700; font-size: 0.7rem; }
+        .footer-note { font-size: 0.65rem; text-align: center; padding: 1rem; color: #64748b; }
+        .alert-toast {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #0f172a;
+            backdrop-filter: blur(12px);
+            padding: 12px 22px;
+            border-radius: 60px;
+            color: white;
+            font-weight: 600;
+            z-index: 200;
+            display: none;
+        }
+        @media (max-width: 550px) {
+            .metrics-grid { grid-template-columns: 1fr; }
+            .forecast-grid { grid-template-columns: repeat(3, 1fr); }
+            .pollutant-grid { grid-template-columns: repeat(2,1fr); }
+            .input-group { flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+<div class="particles" id="particlesContainer"></div>
+<div id="liveAlert" class="alert-toast">⚠️</div>
+
+<div class="container">
+    <div class="glass-panel">
+        <div class="header">
+            <h1>🌀 STORMSENSE AI PRO</h1>
+            <p>1‑hour forecast prediction • Rain probability • Wind gusts • Instability</p>
+            <div class="badge-row">
+                <span class="warning-chip">⚡ FORECAST-BASED AI</span>
+                <span class="api-chip" id="dataSourceBadge">🌐 Next-hour prediction</span>
+            </div>
+        </div>
+
+        <div class="location-panel">
+            <div class="input-group">
+                <div class="autocomplete-wrapper">
+                    <input type="text" id="cityInput" placeholder="Search city... e.g., Kolkata, London, Miami" autocomplete="off">
+                    <div id="suggestionsDropdown" class="suggestions-list" style="display: none;"></div>
+                </div>
+                <button id="searchBtn" class="btn">🔍 Forecast</button>
+            </div>
+            <button id="locationBtn" class="btn btn-location">📍 Use My Location</button>
+        </div>
+
+        <div id="loadingOverlay" class="loading-state">
+            <div class="spinner"></div>
+            <p>Fetching 1-hour forecast models...</p>
+        </div>
+
+        <div id="dashboard" style="display: none;">
+            <div class="weather-core">
+                <div class="hero-weather">
+                    <div class="condition-text" id="conditionLabel">--</div>
+                    <div class="hero-temp" id="tempDisplay">--°C</div>
+                    <div class="location-name-light" id="locationName">📍 --</div>
+                </div>
+
+                <div class="metrics-grid">
+                    <div class="metric-card"><div class="metric-label">💨 Wind / Gusts</div><div class="metric-value" id="windGustVal">-- / -- km/h</div></div>
+                    <div class="metric-card"><div class="metric-label">💧 Humidity</div><div class="metric-value" id="humVal">--%</div></div>
+                    <div class="metric-card"><div class="metric-label">🌡️ Pressure</div><div class="metric-value" id="pressVal">-- hPa</div></div>
+                    <div class="metric-card"><div class="metric-label">⚡ Instability</div><div class="metric-value" id="capeVal">-- J/kg</div></div>
+                </div>
+
+                <!-- FORECAST PANEL: Next 1h, 2h, 3h -->
+                <div class="forecast-panel">
+                    <div style="font-weight:700; margin-bottom:8px;">📡 FORECAST (Next 3 Hours)</div>
+                    <div class="forecast-grid" id="forecastGrid">
+                        <div class="forecast-hour"><span class="hour">+1 HOUR</span><div class="temp" id="f1Temp">--°C</div><div class="rain" id="f1Rain">💧 --%</div><div class="wind-small" id="f1Wind">🌬️ -- km/h</div></div>
+                        <div class="forecast-hour"><span class="hour">+2 HOURS</span><div class="temp" id="f2Temp">--°C</div><div class="rain" id="f2Rain">💧 --%</div><div class="wind-small" id="f2Wind">🌬️ -- km/h</div></div>
+                        <div class="forecast-hour"><span class="hour">+3 HOURS</span><div class="temp" id="f3Temp">--°C</div><div class="rain" id="f3Rain">💧 --%</div><div class="wind-small" id="f3Wind">🌬️ -- km/h</div></div>
+                    </div>
+                </div>
+
+                <div class="prediction-vault" id="predictionModule">
+                    <div id="alertTitle" style="font-weight:800; font-size:1.2rem;">🌤️ AI Forecast Analysis</div>
+                    <div id="alertDesc" style="margin:6px 0 8px; color:#cbd5e1;">Loading forecast models...</div>
+                    <div class="gauge-container">
+                        <svg class="gauge-svg" viewBox="0 0 140 140">
+                            <circle cx="70" cy="70" r="58" fill="none" stroke="#334155" stroke-width="10" stroke-dasharray="365" stroke-dashoffset="0" transform="rotate(-125 70 70)"/>
+                            <circle id="gaugeArcFill" cx="70" cy="70" r="58" fill="none" stroke="url(#gradRisk)" stroke-width="10" stroke-linecap="round" stroke-dasharray="365" stroke-dashoffset="365" transform="rotate(-125 70 70)"/>
+                            <defs><linearGradient id="gradRisk" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#10b981"/><stop offset="50%" stop-color="#f59e0b"/><stop offset="100%" stop-color="#ef4444"/></linearGradient></defs>
+                            <circle cx="70" cy="70" r="8" fill="#0f172a" stroke="#475569" stroke-width="2"/>
+                            <polygon id="needleGauge" points="68,70 72,70 70,22" fill="#ffffff"/>
+                            <text x="70" y="108" text-anchor="middle" font-size="13" font-weight="bold" id="gaugePercent">0%</text>
+                        </svg>
+                    </div>
+                    <div class="risk-breakdown" id="riskBreakdown">
+                        <span>🧠 Forecast-Based Risk Factors</span>
+                        <p id="riskFactorsList">Analyzing next-hour trends...</p>
+                    </div>
+                    <div style="font-size:0.7rem; text-align:center; color:#94a3b8; margin-top:8px;" id="countdownText">⏱️ Next refresh: 60:00</div>
+                </div>
+
+                <div class="air-card">
+                    <div style="display: flex; justify-content: space-between;"><span style="font-weight:700;">🌫️ Air Quality</span><span id="aqiLevelBadge" class="aqi-tag" style="background:#10b981;">Good</span></div>
+                    <div class="pollutant-grid">
+                        <div>PM2.5: <strong id="pm25Val">--</strong></div>
+                        <div>PM10: <strong id="pm10Val">--</strong></div>
+                        <div>NO₂: <strong id="no2Val">--</strong></div>
+                        <div>O₃: <strong id="o3Val">--</strong></div>
+                        <div>SO₂: <strong id="so2Val">--</strong></div>
+                        <div>CO: <strong id="coVal">--</strong></div>
+                    </div>
+                    <div id="airAdvice" style="font-size:0.7rem; margin-top:8px;">✅ Air quality advisory</div>
+                </div>
+                <div class="footer-note" id="sourceTimestamp">🔄 Live forecast integration</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let countdownTimer = null;
+    let lastCoords = null;
+
+    const dashboard = document.getElementById('dashboard');
+    const loadingDiv = document.getElementById('loadingOverlay');
+    const alertBox = document.getElementById('liveAlert');
+    const cityInput = document.getElementById('cityInput');
+    const suggestionsDiv = document.getElementById('suggestionsDropdown');
+
+    function showAlert(msg, isSevere = false) {
+        alertBox.innerHTML = `⚠️ ${msg}`;
+        alertBox.style.display = 'flex';
+        alertBox.style.background = isSevere ? '#dc2626' : '#0f172a';
+        setTimeout(() => { alertBox.style.display = 'none'; }, 5000);
+    }
+
+    function setLoading(show) { 
+        loadingDiv.style.display = show ? 'flex' : 'none'; 
+        dashboard.style.display = show ? 'none' : 'block'; 
+    }
+
+    // Autocomplete
+    let debounce = null;
+    async function fetchSuggestions(q) {
+        if (!q || q.length < 2) { suggestionsDiv.style.display = 'none'; return; }
+        try {
+            const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=6&format=json`);
+            const data = await res.json();
+            if (!data.results) { suggestionsDiv.style.display = 'none'; return; }
+            suggestionsDiv.innerHTML = '';
+            data.results.forEach(loc => {
+                const div = document.createElement('div');
+                div.className = 'suggestion-item';
+                div.innerHTML = `<span class="suggestion-name">${loc.name}</span><span>${loc.country}</span>`;
+                div.onclick = () => {
+                    cityInput.value = `${loc.name}, ${loc.country}`;
+                    suggestionsDiv.style.display = 'none';
+                    fetchForecastData(loc.latitude, loc.longitude, `${loc.name}, ${loc.country}`);
+                };
+                suggestionsDiv.appendChild(div);
+            });
+            suggestionsDiv.style.display = 'block';
+        } catch(e) { suggestionsDiv.style.display = 'none'; }
+    }
+    cityInput.addEventListener('input', e => { if(debounce) clearTimeout(debounce); debounce = setTimeout(() => fetchSuggestions(e.target.value), 300); });
+    document.addEventListener('click', e => { if(!cityInput.contains(e.target) && !suggestionsDiv.contains(e.target)) suggestionsDiv.style.display = 'none'; });
+
+    // Main forecast function using HOURLY data for next 3 hours
+    async function fetchForecastData(lat, lon, placeName) {
+        setLoading(true);
+        try {
+            const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,relative_humidity_2m,precipitation_probability,rain,showers,wind_speed_10m,wind_gusts_10m,pressure_msl,cloud_cover&current=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,pressure_msl,weather_code&timezone=auto&forecast_hours=4`;
+            const response = await fetch(url);
+            if (!response.ok) throw new Error("Forecast fetch failed");
+            const data = await response.json();
+            
+            const current = data.current;
+            const hourly = data.hourly;
+            if (!current || !hourly) throw new Error("No forecast data");
+            
+            // Safely get next 3 hours (indices 1,2,3)
+            const next1 = { 
+                temp: hourly.temperature_2m?.[1] || current.temperature_2m, 
+                rainProb: hourly.precipitation_probability?.[1] || 0, 
+                wind: hourly.wind_speed_10m?.[1] || current.wind_speed_10m,
+                gust: hourly.wind_gusts_10m?.[1] || current.wind_gusts_10m || current.wind_speed_10m
+            };
+            const next2 = { 
+                temp: hourly.temperature_2m?.[2] || current.te
