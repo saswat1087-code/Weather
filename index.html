@@ -671,10 +671,13 @@
             
             const wData = await primaryRes.json();
             
-            // If it's a live location, extract the precise structural name from the API response payload
+            // DYNAMIC OVERWRITE: Extract precise name layout parameters directly from the payload
             let resolvedPlaceName = placeName;
             if (!placeName || placeName === "Your Live Location") {
                 resolvedPlaceName = wData.location.name ? `${wData.location.name}, ${wData.location.country}` : "Your Live Location";
+                
+                // Sync the input text layer mapping automatically 
+                cityInput.value = resolvedPlaceName;
             }
             
             parseWeatherAPIPayload(wData, resolvedPlaceName, queryParameter);
@@ -705,6 +708,9 @@
             }
 
             let finalOMName = (placeName === "Your Live Location") ? `${fallbackLat.toFixed(2)}, ${fallbackLon.toFixed(2)}` : placeName;
+            if (placeName === "Your Live Location") {
+                cityInput.value = finalOMName;
+            }
             await runOpenMeteoFailoverPipeline(fallbackLat, fallbackLon, finalOMName, queryParameter);
         } finally {
             setLoading(false);
@@ -721,7 +727,6 @@
         const current = wData.current;
         const location = wData.location;
         
-        // Flatten hours dynamically into an organized linear sequence 
         let compiledHours = [];
         if (wData.forecast && wData.forecast.forecastday) {
             wData.forecast.forecastday.forEach(day => {
@@ -731,7 +736,6 @@
 
         const currentEpoch = current.last_updated_epoch;
         
-        // Find closest chronological index match
         let currentHourIndex = compiledHours.findIndex(h => h.time_epoch >= currentEpoch);
         if (currentHourIndex === -1) {
             currentHourIndex = new Date(current.last_updated).getHours();
@@ -789,7 +793,6 @@
 
         const current = omData.current;
         
-        // Match timestamps cleanly to establish current indexing bounds
         const currentIsoStr = current.time; 
         let currentHourIndex = omData.hourly.time.findIndex(t => t === currentIsoStr);
         if (currentHourIndex === -1) currentHourIndex = new Date().getHours();
@@ -826,7 +829,6 @@
         const gridContainer = document.getElementById('trendForecastGrid');
         gridContainer.innerHTML = '';
         
-        // Grab future sequential offsets from mapped current hour index tracking
         for (let i = 1; i <= 3; i++) {
             let targetIndex = startIndex + i;
             let hourData = hoursArray[targetIndex];
@@ -834,7 +836,6 @@
                 const item = document.createElement('div');
                 item.className = 'trend-item';
                 
-                // Formats string gracefully from 'YYYY-MM-DD HH:MM' format to 'HH:MM'
                 let timeDisplayStr = hourData.time.includes(' ') ? hourData.time.split(' ')[1] : hourData.time;
                 
                 item.innerHTML = `
@@ -858,7 +859,6 @@
                 let rawCode = hourlyData.weather_code[targetIndex];
                 let rawTime = hourlyData.time[targetIndex]; 
                 
-                // Strip structural ISO elements to output standard layout strings
                 let computedTimeStr = rawTime.includes('T') ? rawTime.split('T')[1] : rawTime;
 
                 const item = document.createElement('div');
@@ -1007,7 +1007,7 @@
     // ---------- METRIC TIMERS ----------
     function resetLoopTimer(queryParam, placeName, lat=null, lon=null) {
         if (countdownTimer) clearInterval(countdownTimer);
-        let secondsLeft = 60; // Switched auto-refresh cycle to exactly 1 minute
+        let secondsLeft = 60; 
         const countdownSpan = document.getElementById('countdownText');
         
         countdownTimer = setInterval(() => {
@@ -1030,11 +1030,15 @@
         suggestionsDiv.style.display = 'none';
     }
 
+    // ---------- UPDATED GEOLOCATION HANDLER ----------
     function onLocationClick() {
         if (!navigator.geolocation) return showAlertMsg("Geolocation unsupported");
         setLoading(true, "Polling geospatial tracking loops...");
         navigator.geolocation.getCurrentPosition(async (pos) => {
-            // Send query parameter via raw coordinates. The system reverse-geocodes the exact city name layout dynamically.
+            // Clear manual text to minimize layout mismatches before handling overrides
+            cityInput.value = "";
+            
+            // Send flag coordinates to prompt runtime payload translation
             await fetchWeatherData(`${pos.coords.latitude},${pos.coords.longitude}`, "Your Live Location", pos.coords.latitude, pos.coords.longitude);
         }, () => { 
             showAlertMsg("Location access denied. Search manually.", false); 
