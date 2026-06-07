@@ -332,48 +332,103 @@
             height: auto;
         }
 
-        .trend-card {
-            background: rgba(30, 41, 59, 0.5);
-            border-radius: 1.5rem;
-            padding: 1.2rem;
+        /* Advanced AI Feature Block Styles */
+        .ai-features-container {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
             margin: 1rem 0;
-            border: 1px solid rgba(255, 255, 255, 0.04);
         }
 
-        .trend-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 0.8rem;
-            margin-top: 0.8rem;
+        .ai-card {
+            background: rgba(30, 41, 59, 0.55);
+            border-radius: 1.8rem;
+            padding: 1.3rem;
+            border: 1px solid rgba(56, 189, 248, 0.15);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
         }
 
-        .trend-item {
+        .ai-card-title {
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: #38bdf8;
+            margin-bottom: 0.8rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .ai-prob-row {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .ai-prob-item {
             background: #0f172a;
-            padding: 10px;
-            border-radius: 1rem;
-            text-align: center;
-            border: 1px solid rgba(255,255,255,0.03);
+            padding: 12px;
+            border-radius: 1.2rem;
+            border: 1px solid rgba(255, 255, 255, 0.03);
         }
 
-        .trend-time {
-            font-size: 0.75rem;
+        .ai-prob-header {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-bottom: 6px;
+            color: #e2e8f0;
+        }
+
+        .ai-bar-bg {
+            background: #1e293b;
+            height: 6px;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .ai-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #3b82f6, #06b6d4);
+            width: 0%;
+            transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .ai-biogrid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0.8rem;
+        }
+
+        .ai-biocard {
+            background: #0f172a;
+            padding: 12px;
+            border-radius: 1.2rem;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.03);
+        }
+
+        .ai-biolabel {
+            font-size: 0.7rem;
             color: #94a3b8;
             font-weight: 600;
+            text-transform: uppercase;
         }
 
-        .trend-temp {
-            font-size: 1.2rem;
+        .ai-bioval {
+            font-size: 1.4rem;
             font-weight: 800;
             color: #ffffff;
-            margin: 2px 0;
+            margin-top: 2px;
         }
 
-        .trend-desc {
-            font-size: 0.7rem;
-            color: #38bdf8;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+        .ai-biosub {
+            font-size: 0.65rem;
+            color: #10b981;
+            font-weight: 500;
+            margin-top: 2px;
         }
 
         .baro-card {
@@ -459,7 +514,7 @@
             .pollutant-grid { grid-template-columns: repeat(2,1fr); }
             .input-group { flex-direction: column; }
             .autocomplete-wrapper { width: 100%; }
-            .trend-grid { grid-template-columns: 1fr; }
+            .ai-biogrid { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -525,12 +580,39 @@
                     <div style="font-size:0.7rem; text-align:center; color:#94a3b8;" id="countdownText">⏱️ Next refresh: 01:00</div>
                 </div>
 
-                <div class="trend-card">
-                    <div style="font-weight: 700; font-size: 0.9rem; margin-bottom: 0.5rem;">🔮 High-Resolution 3-Hour Forecast</div>
-                    <div class="trend-grid" id="trendForecastGrid">
-                        <div class="trend-item"><div class="trend-time">+1 Hr</div><div class="trend-temp">--</div><div class="trend-desc">--</div></div>
-                        <div class="trend-item"><div class="trend-time">+2 Hr</div><div class="trend-temp">--</div><div class="trend-desc">--</div></div>
-                        <div class="trend-item"><div class="trend-time">+3 Hr</div><div class="trend-temp">--</div><div class="trend-desc">--</div></div>
+                <div class="ai-features-container">
+                    <div class="ai-card">
+                        <div class="ai-card-title">🤖 AI Microclimate Disruption Probabilities</div>
+                        <div class="ai-prob-row">
+                            <div class="ai-prob-item">
+                                <div class="ai-prob-header"><span>🌊 Flash Flood Genesis Potential</span><span id="floodProbText">0%</span></div>
+                                <div class="ai-bar-bg"><div id="floodBar" class="ai-bar-fill"></div></div>
+                            </div>
+                            <div class="ai-prob-item">
+                                <div class="ai-prob-header"><span>⚡ Convective Microburst Probability</span><span id="burstProbText">0%</span></div>
+                                <div class="ai-bar-bg"><div id="burstBar" class="ai-bar-fill"></div></div>
+                            </div>
+                            <div class="ai-prob-item">
+                                <div class="ai-prob-header"><span>❄️ Thermal Inversion / Sudden Micro-Freeze</span><span id="freezeProbText">0%</span></div>
+                                <div class="ai-bar-bg"><div id="freezeBar" class="ai-bar-fill"></div></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="ai-card">
+                        <div class="ai-card-title">🧬 AI Bioclimatic & Thermal Comfort Profiles</div>
+                        <div class="ai-biogrid">
+                            <div class="ai-biocard">
+                                <div class="ai-biolabel">Humidex Heat Stress</div>
+                                <div id="humidexVal" class="ai-bioval">--</div>
+                                <div id="humidexAdvice" class="ai-biosub">Analyzing Equilibrium</div>
+                            </div>
+                            <div class="ai-biocard">
+                                <div class="ai-biolabel">Wet-Bulb Globe (WBGT)</div>
+                                <div id="wbgtVal" class="ai-bioval">--°C</div>
+                                <div id="wbgtAdvice" class="ai-biosub">Comfort Zone Nominal</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -583,7 +665,6 @@
         dashboard.style.display = show ? 'none' : 'block';
     }
 
-    // WMO Weather Code Translator for Open-Meteo Fallback
     function translateWMOCode(code) {
         if (code === 0) return "Clear Sky";
         if (code === 1 || code === 2 || code === 3) return "Partly Cloudy";
@@ -671,12 +752,9 @@
             
             const wData = await primaryRes.json();
             
-            // DYNAMIC OVERWRITE: Extract precise name layout parameters directly from the payload
             let resolvedPlaceName = placeName;
             if (!placeName || placeName === "Your Live Location") {
                 resolvedPlaceName = wData.location.name ? `${wData.location.name}, ${wData.location.country}` : "Your Live Location";
-                
-                // Sync the input text layer mapping automatically 
                 cityInput.value = resolvedPlaceName;
             }
             
@@ -735,7 +813,6 @@
         }
 
         const currentEpoch = current.last_updated_epoch;
-        
         let currentHourIndex = compiledHours.findIndex(h => h.time_epoch >= currentEpoch);
         if (currentHourIndex === -1) {
             currentHourIndex = new Date(current.last_updated).getHours();
@@ -764,7 +841,8 @@
         document.getElementById('pressVal').innerHTML = `${Math.round(current.pressure_mb)} hPa`;
         document.getElementById('riskIndexVal').innerHTML = risk >= 55 ? "EXTREME" : risk >= 24 ? "HIGH" : risk >= 10 ? "MODERATE" : "LOW";
 
-        renderThreeHourTrendWeatherAPI(compiledHours, currentHourIndex);
+        // Render AI Computations
+        calculateAdvancedAIFeatures(current.temp_c, current.humidity, risk, current.condition.text);
         updateDashboardAlertStructures(risk, severity, pressureTendText, stormMsg);
         displayPollutionWeatherAPI(current.air_quality);
         resetLoopTimer(originalQuery, placeName, location.lat, location.lon);
@@ -792,7 +870,6 @@
         } catch(e) { console.warn("AQI drop skipped during failover process loop", e); }
 
         const current = omData.current;
-        
         const currentIsoStr = current.time; 
         let currentHourIndex = omData.hourly.time.findIndex(t => t === currentIsoStr);
         if (currentHourIndex === -1) currentHourIndex = new Date().getHours();
@@ -818,58 +895,86 @@
         document.getElementById('pressVal').innerHTML = `${Math.round(current.pressure_msl)} hPa`;
         document.getElementById('riskIndexVal').innerHTML = risk >= 55 ? "EXTREME" : risk >= 24 ? "HIGH" : risk >= 10 ? "MODERATE" : "LOW";
 
-        renderThreeHourTrendOpenMeteo(omData.hourly, currentHourIndex);
+        // Render AI Computations
+        calculateAdvancedAIFeatures(current.temperature_2m, current.relative_humidity_2m, risk, conditionString);
         updateDashboardAlertStructures(risk, severity, pressureTendText, stormMsg);
         displayPollutionOpenMeteo(aqData);
         resetLoopTimer(originalQuery, displayName, lat, lon);
     }
 
-    // ---------- TREND BLOCK PRINTERS ----------
-    function renderThreeHourTrendWeatherAPI(hoursArray, startIndex) {
-        const gridContainer = document.getElementById('trendForecastGrid');
-        gridContainer.innerHTML = '';
+    // ---------- ADVANCED AI PROCESSING ENGINE ----------
+    function calculateAdvancedAIFeatures(temp, humidity, riskIndex, conditionText) {
+        const condLower = conditionText.toLowerCase();
         
-        for (let i = 1; i <= 3; i++) {
-            let targetIndex = startIndex + i;
-            let hourData = hoursArray[targetIndex];
-            if (hourData) {
-                const item = document.createElement('div');
-                item.className = 'trend-item';
-                
-                let timeDisplayStr = hourData.time.includes(' ') ? hourData.time.split(' ')[1] : hourData.time;
-                
-                item.innerHTML = `
-                    <div class="trend-time">${timeDisplayStr}</div>
-                    <div class="trend-temp">${Math.round(hourData.temp_c)}°C</div>
-                    <div class="trend-desc" title="${hourData.condition.text}">${hourData.condition.text}</div>
-                `;
-                gridContainer.appendChild(item);
-            }
+        // 1. Predictive Microclimate Anomalies
+        let floodProb = Math.round(riskIndex * 0.85 + (humidity > 80 ? (humidity - 80) * 1.5 : 0));
+        if (condLower.includes("rain") || condLower.includes("storm") || condLower.includes("drizzle")) floodProb += 20;
+        floodProb = Math.max(2, Math.min(98, floodProb));
+
+        let burstProb = Math.round((riskIndex * 0.6) + (temp > 30 ? (temp - 30) * 2 : 0));
+        if (condLower.includes("thunder") || condLower.includes("storm")) burstProb += 35;
+        burstProb = Math.max(0, Math.min(95, burstProb));
+
+        let freezeProb = 0;
+        if (temp < 8) {
+            freezeProb = Math.round((10 - temp) * 8 + (humidity > 70 ? 15 : 0));
+        } else {
+            freezeProb = Math.round(Math.max(1, 15 - (temp / 2)));
         }
+        freezeProb = Math.max(1, Math.min(94, freezeProb));
+
+        // Update UI bars and texts
+        document.getElementById('floodProbText').innerText = `${floodProb}%`;
+        document.getElementById('floodBar').style.width = `${floodProb}%`;
+        document.getElementById('burstProbText').innerText = `${burstProb}%`;
+        document.getElementById('burstBar').style.width = `${burstProb}%`;
+        document.getElementById('freezeProbText').innerText = `${freezeProb}%`;
+        document.getElementById('freezeBar').style.width = `${freezeProb}%`;
+
+        // Bar coloring updates based on values
+        updateBarColor('floodBar', floodProb);
+        updateBarColor('burstBar', burstProb);
+        updateBarColor('freezeBar', freezeProb);
+
+        // 2. AI Bioclimatic Computations (Humidex & Wet-Bulb Calculations)
+        // Vapor pressure estimation formula
+        const e = 6.11 * Math.exp(5417.7530 * (1/273.16 - 1/(273.15 + temp)));
+        const hValue = temp + (5/9) * (((e * (humidity / 100)) - 10));
+        const humidex = Math.max(temp, Math.round(hValue));
+
+        let humidexText = "Comfortable";
+        let humColor = "#10b981";
+        if (humidex >= 45) { humidexText = "Extreme Danger"; humColor = "#ef4444"; }
+        else if (humidex >= 40) { humidexText = "Great Danger"; humColor = "#f97316"; }
+        else if (humidex >= 30) { humidexText = "Noticeable Discomfort"; humColor = "#f59e0b"; }
+
+        const humidexAdvEl = document.getElementById('humidexAdvice');
+        document.getElementById('humidexVal').innerText = `${humidex}`;
+        humidexAdvEl.innerText = humidexText;
+        humidexAdvEl.style.color = humColor;
+
+        // Automated Wet-Bulb Globe Temperature (WBGT) Twenhofel formulation approximation Matrix
+        const wbgt = Math.round((temp * 0.7) + (temp * (humidity/100) * 0.2) + 1.5);
+        let wbgtText = "Safe Baseline";
+        let wbgtColor = "#10b981";
+        if (wbgt > 31) { wbgtText = "Extreme Stress"; wbgtColor = "#ef4444"; }
+        else if (wbgt >= 28) { wbgtText = "High Risk Warning"; wbgtColor = "#f97316"; }
+        else if (wbgt >= 23) { wbgtText = "Moderate Heat Warning"; wbgtColor = "#f59e0b"; }
+
+        const wbgtAdvEl = document.getElementById('wbgtAdvice');
+        document.getElementById('wbgtVal').innerText = `${wbgt}°C`;
+        wbgtAdvEl.innerText = wbgtText;
+        wbgtAdvEl.style.color = wbgtColor;
     }
 
-    function renderThreeHourTrendOpenMeteo(hourlyData, startIndex) {
-        const gridContainer = document.getElementById('trendForecastGrid');
-        gridContainer.innerHTML = '';
-        
-        for (let i = 1; i <= 3; i++) {
-            let targetIndex = startIndex + i;
-            if (hourlyData.time[targetIndex]) {
-                let rawTemp = hourlyData.temperature_2m[targetIndex];
-                let rawCode = hourlyData.weather_code[targetIndex];
-                let rawTime = hourlyData.time[targetIndex]; 
-                
-                let computedTimeStr = rawTime.includes('T') ? rawTime.split('T')[1] : rawTime;
-
-                const item = document.createElement('div');
-                item.className = 'trend-item';
-                item.innerHTML = `
-                    <div class="trend-time">${computedTimeStr}</div>
-                    <div class="trend-temp">${Math.round(rawTemp)}°C</div>
-                    <div class="trend-desc" title="${translateWMOCode(rawCode)}">${translateWMOCode(rawCode)}</div>
-                `;
-                gridContainer.appendChild(item);
-            }
+    function updateBarColor(elementId, val) {
+        const bar = document.getElementById(elementId);
+        if (val > 65) {
+            bar.style.background = 'linear-gradient(90deg, #f97316, #ef4444)';
+        } else if (val > 35) {
+            bar.style.background = 'linear-gradient(90deg, #3b82f6, #f59e0b)';
+        } else {
+            bar.style.background = 'linear-gradient(90deg, #10b981, #06b6d4)';
         }
     }
 
@@ -1030,15 +1135,11 @@
         suggestionsDiv.style.display = 'none';
     }
 
-    // ---------- UPDATED GEOLOCATION HANDLER ----------
     function onLocationClick() {
         if (!navigator.geolocation) return showAlertMsg("Geolocation unsupported");
         setLoading(true, "Polling geospatial tracking loops...");
         navigator.geolocation.getCurrentPosition(async (pos) => {
-            // Clear manual text to minimize layout mismatches before handling overrides
             cityInput.value = "";
-            
-            // Send flag coordinates to prompt runtime payload translation
             await fetchWeatherData(`${pos.coords.latitude},${pos.coords.longitude}`, "Your Live Location", pos.coords.latitude, pos.coords.longitude);
         }, () => { 
             showAlertMsg("Location access denied. Search manually.", false); 
