@@ -701,9 +701,9 @@
                         }
                     }
                 } catch(geoErr) {
-                    fallbackLat = 35.6895; 
-                    fallbackLon = 139.6917;
-                    placeName = "Tokyo, Japan";
+                    fallbackLat = 22.5726; 
+                    fallbackLon = 88.3639;
+                    placeName = "Kolkata, India";
                 }
             }
 
@@ -1065,8 +1065,8 @@
     
     // Auto initialization vector
     (async () => { 
-        await fetchWeatherData("Tokyo", "Tokyo, Japan", 35.6895, 139.6917); 
-        cityInput.value = "Tokyo, Japan"; 
+        await fetchWeatherData("Kolkata", "Kolkata, India", 22.5726, 88.3639); 
+        cityInput.value = "Kolkata, India"; 
     })();
 </script>
 </body>
