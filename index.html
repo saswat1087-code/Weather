@@ -522,7 +522,7 @@
                             <text x="70" y="108" text-anchor="middle" font-size="13" font-weight="bold" id="gaugePercent">0%</text>
                         </svg>
                     </div>
-                    <div style="font-size:0.7rem; text-align:center; color:#94a3b8;" id="countdownText">⏱️ Next refresh: 60:00</div>
+                    <div style="font-size:0.7rem; text-align:center; color:#94a3b8;" id="countdownText">⏱️ Next refresh: 01:00</div>
                 </div>
 
                 <div class="trend-card">
@@ -604,14 +604,12 @@
             return;
         }
         try {
-            // WeatherAPI Geocoding Engine used primarily
             const url = `https://api.weatherapi.com/v1/search.json?key=${WEATHERAPI_KEY}&q=${encodeURIComponent(query)}`;
             const response = await fetch(url);
             if (!response.ok) throw new Error();
             const data = await response.json();
             renderSuggestions(data);
         } catch (err) {
-            // Open-Meteo Geocoding Secondary Backup Fallback Channel
             try {
                 const altUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=5&language=en&format=json`;
                 const altResp = await fetch(altUrl);
@@ -637,9 +635,10 @@
             div.className = 'suggestion-item';
             div.innerHTML = `<span class="suggestion-name">${loc.name}</span><span class="suggestion-country">${loc.country}${loc.region ? `, ${loc.region}` : ''}</span>`;
             div.addEventListener('click', () => {
-                cityInput.value = `${loc.name}, ${loc.country}`;
+                const clearName = `${loc.name}, ${loc.country}`;
+                cityInput.value = clearName;
                 suggestionsDiv.style.display = 'none';
-                fetchWeatherData(`${loc.lat},${loc.lon}`, `${loc.name}, ${loc.country}`, loc.lat, loc.lon);
+                fetchWeatherData(`${loc.lat},${loc.lon}`, clearName, loc.lat, loc.lon);
             });
             suggestionsDiv.appendChild(div);
         });
@@ -663,8 +662,7 @@
     async function fetchWeatherData(queryParameter, placeName, optLat=null, optLon=null) {
         setLoading(true, "Contacting WeatherAPI infrastructure...");
         try {
-            // Primary Attempt Pathway
-            const primaryUrl = `https://api.weatherapi.com/v1/forecast.json?key=${WEATHERAPI_KEY}&q=${encodeURIComponent(queryParameter)}&days=1&aqi=yes`;
+            const primaryUrl = `https://api.weatherapi.com/v1/forecast.json?key=${WEATHERAPI_KEY}&q=${encodeURIComponent(queryParameter)}&days=2&aqi=yes`;
             const primaryRes = await fetch(primaryUrl);
             
             if (!primaryRes.ok) {
@@ -672,35 +670,42 @@
             }
             
             const wData = await primaryRes.json();
-            parseWeatherAPIPayload(wData, placeName, queryParameter);
+            
+            // If it's a live location, extract the precise structural name from the API response payload
+            let resolvedPlaceName = placeName;
+            if (!placeName || placeName === "Your Live Location") {
+                resolvedPlaceName = wData.location.name ? `${wData.location.name}, ${wData.location.country}` : "Your Live Location";
+            }
+            
+            parseWeatherAPIPayload(wData, resolvedPlaceName, queryParameter);
 
         } catch (err) {
             console.warn("WeatherAPI channel disruption detected. Executing failover sequence...", err);
             
-            // Extract spatial vectors if geocoded data isn't explicit
             let fallbackLat = optLat;
             let fallbackLon = optLon;
 
             if (!fallbackLat || !fallbackLon) {
                 try {
-                    // Quick resolve step via Open-Meteo Geocoding API string conversion
                     const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(queryParameter.split(',')[0])}&count=1&format=json`;
                     const geoRes = await fetch(geoUrl);
                     const geoData = await geoRes.json();
                     if(geoData.results && geoData.results[0]) {
                         fallbackLat = geoData.results[0].latitude;
                         fallbackLon = geoData.results[0].longitude;
-                        if(!placeName) placeName = `${geoData.results[0].name}, ${geoData.results[0].country}`;
+                        if(!placeName || placeName === "Your Live Location") {
+                            placeName = `${geoData.results[0].name}, ${geoData.results[0].country}`;
+                        }
                     }
                 } catch(geoErr) {
-                    fallbackLat = 35.6895; // Absolute static defaults to protect dashboard render runtime
+                    fallbackLat = 35.6895; 
                     fallbackLon = 139.6917;
                     placeName = "Tokyo, Japan";
                 }
             }
 
-            // Fire Open-Meteo Layout Channel fallback architecture
-            await runOpenMeteoFailoverPipeline(fallbackLat, fallbackLon, placeName, queryParameter);
+            let finalOMName = (placeName === "Your Live Location") ? `${fallbackLat.toFixed(2)}, ${fallbackLon.toFixed(2)}` : placeName;
+            await runOpenMeteoFailoverPipeline(fallbackLat, fallbackLon, finalOMName, queryParameter);
         } finally {
             setLoading(false);
         }
@@ -708,7 +713,6 @@
 
     // ---------- LAYOUT HANDLERS ----------
     function parseWeatherAPIPayload(wData, placeName, originalQuery) {
-        // Adjust badge styles dynamically to verify data pipeline pathing
         dataSourceSpan.innerHTML = "🌐 WeatherAPI Core";
         dataSourceSpan.style.background = "rgba(56, 189, 248, 0.15)";
         dataSourceSpan.style.color = "#38bdf8";
@@ -716,12 +720,26 @@
 
         const current = wData.current;
         const location = wData.location;
-        const hourForecasts = wData.forecast.forecastday[0].hour;
-        const currentHourIndex = new Date(current.last_updated).getHours();
+        
+        // Flatten hours dynamically into an organized linear sequence 
+        let compiledHours = [];
+        if (wData.forecast && wData.forecast.forecastday) {
+            wData.forecast.forecastday.forEach(day => {
+                if (day.hour) compiledHours = compiledHours.concat(day.hour);
+            });
+        }
+
+        const currentEpoch = current.last_updated_epoch;
+        
+        // Find closest chronological index match
+        let currentHourIndex = compiledHours.findIndex(h => h.time_epoch >= currentEpoch);
+        if (currentHourIndex === -1) {
+            currentHourIndex = new Date(current.last_updated).getHours();
+        }
         
         let pressureHistoryArr = [];
-        for(let i = 0; i <= currentHourIndex; i++) {
-            if(hourForecasts[i]) pressureHistoryArr.push(hourForecasts[i].pressure_mb);
+        for(let i = Math.max(0, currentHourIndex - 2); i <= currentHourIndex; i++) {
+            if(compiledHours[i]) pressureHistoryArr.push(compiledHours[i].pressure_mb);
         }
 
         const mappedInputData = {
@@ -742,10 +760,10 @@
         document.getElementById('pressVal').innerHTML = `${Math.round(current.pressure_mb)} hPa`;
         document.getElementById('riskIndexVal').innerHTML = risk >= 55 ? "EXTREME" : risk >= 24 ? "HIGH" : risk >= 10 ? "MODERATE" : "LOW";
 
-        renderThreeHourTrendWeatherAPI(hourForecasts, currentHourIndex);
+        renderThreeHourTrendWeatherAPI(compiledHours, currentHourIndex);
         updateDashboardAlertStructures(risk, severity, pressureTendText, stormMsg);
         displayPollutionWeatherAPI(current.air_quality);
-        resetLoopTimer(originalQuery, placeName, optLat=location.lat, optLon=location.lon);
+        resetLoopTimer(originalQuery, placeName, location.lat, location.lon);
     }
 
     async function runOpenMeteoFailoverPipeline(lat, lon, displayName, originalQuery) {
@@ -758,12 +776,11 @@
 
         setLoading(true, "Connecting to emergency Open-Meteo clusters...");
         
-        const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,weather_code,pressure_msl,wind_speed_10m&hourly=temperature_2m,pressure_msl,weather_code&timezone=auto`;
+        const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,weather_code,pressure_msl,wind_speed_10m&hourly=temperature_2m,pressure_msl,weather_code&timezone=auto&forecast_days=2`;
         const weatherRes = await fetch(weatherUrl);
         if(!weatherRes.ok) throw new Error("Secondary Open-Meteo fallback stack down.");
         const omData = await weatherRes.json();
 
-        // Query Secondary Air Quality cluster
         let aqData = null;
         try {
             const aqResp = await fetch(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&hourly=pm10,pm2_5,nitrogen_dioxide,ozone,sulphur_dioxide&timezone=auto`);
@@ -771,11 +788,14 @@
         } catch(e) { console.warn("AQI drop skipped during failover process loop", e); }
 
         const current = omData.current;
-        const currentHourIndex = new Date().getHours();
-        const conditionString = translateWMOCode(current.weather_code);
+        
+        // Match timestamps cleanly to establish current indexing bounds
+        const currentIsoStr = current.time; 
+        let currentHourIndex = omData.hourly.time.findIndex(t => t === currentIsoStr);
+        if (currentHourIndex === -1) currentHourIndex = new Date().getHours();
 
-        // Map pressure sequence history logs safely
-        let pressureHistoryArr = omData.hourly.pressure_msl.slice(0, currentHourIndex + 1);
+        const conditionString = translateWMOCode(current.weather_code);
+        let pressureHistoryArr = omData.hourly.pressure_msl.slice(Math.max(0, currentHourIndex - 2), currentHourIndex + 1);
 
         const mappedInputData = {
             temp: current.temperature_2m,
@@ -787,7 +807,6 @@
 
         const { risk, severity, pressureTendText, stormMsg } = computeRiskAndPressure(mappedInputData, pressureHistoryArr);
 
-        // Core Layout mapping execution
         document.getElementById('tempDisplay').innerHTML = `${Math.round(current.temperature_2m)}°C`;
         document.getElementById('conditionLabel').innerHTML = conditionString;
         document.getElementById('locationName').innerHTML = `📍 ${displayName}`;
@@ -796,7 +815,6 @@
         document.getElementById('pressVal').innerHTML = `${Math.round(current.pressure_msl)} hPa`;
         document.getElementById('riskIndexVal').innerHTML = risk >= 55 ? "EXTREME" : risk >= 24 ? "HIGH" : risk >= 10 ? "MODERATE" : "LOW";
 
-        // Bind high resolution predictive 3-hour window from OpenMeteo array slices
         renderThreeHourTrendOpenMeteo(omData.hourly, currentHourIndex);
         updateDashboardAlertStructures(risk, severity, pressureTendText, stormMsg);
         displayPollutionOpenMeteo(aqData);
@@ -804,17 +822,23 @@
     }
 
     // ---------- TREND BLOCK PRINTERS ----------
-    function renderThreeHourTrendWeatherAPI(hoursArray, startHour) {
+    function renderThreeHourTrendWeatherAPI(hoursArray, startIndex) {
         const gridContainer = document.getElementById('trendForecastGrid');
         gridContainer.innerHTML = '';
+        
+        // Grab future sequential offsets from mapped current hour index tracking
         for (let i = 1; i <= 3; i++) {
-            let targetHour = (startHour + i) % 24;
-            let hourData = hoursArray[targetHour];
+            let targetIndex = startIndex + i;
+            let hourData = hoursArray[targetIndex];
             if (hourData) {
                 const item = document.createElement('div');
                 item.className = 'trend-item';
+                
+                // Formats string gracefully from 'YYYY-MM-DD HH:MM' format to 'HH:MM'
+                let timeDisplayStr = hourData.time.includes(' ') ? hourData.time.split(' ')[1] : hourData.time;
+                
                 item.innerHTML = `
-                    <div class="trend-time">${hourData.time.split(' ')[1]}</div>
+                    <div class="trend-time">${timeDisplayStr}</div>
                     <div class="trend-temp">${Math.round(hourData.temp_c)}°C</div>
                     <div class="trend-desc" title="${hourData.condition.text}">${hourData.condition.text}</div>
                 `;
@@ -823,25 +847,29 @@
         }
     }
 
-    function renderThreeHourTrendOpenMeteo(hourlyData, startHour) {
+    function renderThreeHourTrendOpenMeteo(hourlyData, startIndex) {
         const gridContainer = document.getElementById('trendForecastGrid');
         gridContainer.innerHTML = '';
+        
         for (let i = 1; i <= 3; i++) {
-            let targetIndex = (startHour + i) % 24;
-            let rawTemp = hourlyData.temperature_2m[targetIndex];
-            let rawCode = hourlyData.weather_code[targetIndex];
-            
-            // Build temporary step visualization time variables
-            let computedTimeStr = `${targetIndex.toString().padStart(2, '0')}:00`;
+            let targetIndex = startIndex + i;
+            if (hourlyData.time[targetIndex]) {
+                let rawTemp = hourlyData.temperature_2m[targetIndex];
+                let rawCode = hourlyData.weather_code[targetIndex];
+                let rawTime = hourlyData.time[targetIndex]; 
+                
+                // Strip structural ISO elements to output standard layout strings
+                let computedTimeStr = rawTime.includes('T') ? rawTime.split('T')[1] : rawTime;
 
-            const item = document.createElement('div');
-            item.className = 'trend-item';
-            item.innerHTML = `
-                <div class="trend-time">${computedTimeStr}</div>
-                <div class="trend-temp">${Math.round(rawTemp)}°C</div>
-                <div class="trend-desc" title="${translateWMOCode(rawCode)}">${translateWMOCode(rawCode)}</div>
-            `;
-            gridContainer.appendChild(item);
+                const item = document.createElement('div');
+                item.className = 'trend-item';
+                item.innerHTML = `
+                    <div class="trend-time">${computedTimeStr}</div>
+                    <div class="trend-temp">${Math.round(rawTemp)}°C</div>
+                    <div class="trend-desc" title="${translateWMOCode(rawCode)}">${translateWMOCode(rawCode)}</div>
+                `;
+                gridContainer.appendChild(item);
+            }
         }
     }
 
@@ -979,7 +1007,7 @@
     // ---------- METRIC TIMERS ----------
     function resetLoopTimer(queryParam, placeName, lat=null, lon=null) {
         if (countdownTimer) clearInterval(countdownTimer);
-        let secondsLeft = 3600;
+        let secondsLeft = 60; // Switched auto-refresh cycle to exactly 1 minute
         const countdownSpan = document.getElementById('countdownText');
         
         countdownTimer = setInterval(() => {
@@ -1006,6 +1034,7 @@
         if (!navigator.geolocation) return showAlertMsg("Geolocation unsupported");
         setLoading(true, "Polling geospatial tracking loops...");
         navigator.geolocation.getCurrentPosition(async (pos) => {
+            // Send query parameter via raw coordinates. The system reverse-geocodes the exact city name layout dynamically.
             await fetchWeatherData(`${pos.coords.latitude},${pos.coords.longitude}`, "Your Live Location", pos.coords.latitude, pos.coords.longitude);
         }, () => { 
             showAlertMsg("Location access denied. Search manually.", false); 
