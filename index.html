@@ -331,6 +331,50 @@
             height: auto;
         }
 
+        .trend-card {
+            background: rgba(30, 41, 59, 0.5);
+            border-radius: 1.5rem;
+            padding: 1.2rem;
+            margin: 1rem 0;
+            border: 1px solid rgba(255, 255, 255, 0.04);
+        }
+
+        .trend-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0.8rem;
+            margin-top: 0.8rem;
+        }
+
+        .trend-item {
+            background: #0f172a;
+            padding: 10px;
+            border-radius: 1rem;
+            text-align: center;
+            border: 1px solid rgba(255,255,255,0.03);
+        }
+
+        .trend-time {
+            font-size: 0.75rem;
+            color: #94a3b8;
+            font-weight: 600;
+        }
+
+        .trend-temp {
+            font-size: 1.2rem;
+            font-weight: 800;
+            color: #ffffff;
+            margin: 2px 0;
+        }
+
+        .trend-desc {
+            font-size: 0.7rem;
+            color: #38bdf8;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
         .baro-card {
             background: rgba(15, 23, 42, 0.3);
             border-radius: 1.5rem;
@@ -414,6 +458,7 @@
             .pollutant-grid { grid-template-columns: repeat(2,1fr); }
             .input-group { flex-direction: column; }
             .autocomplete-wrapper { width: 100%; }
+            .trend-grid { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -425,10 +470,10 @@
     <div class="glass-panel">
         <div class="header">
             <h1>🌀 STORMSENSE AI</h1>
-            <p>1‑hour severe prediction + air quality intelligence</p>
+            <p>Real-time predictive intelligence matrix</p>
             <div class="badge-row">
-                <span class="warning-chip">⚡ DOPPLER ANALYTICS</span>
-                <span class="api-chip" id="dataSourceBadge">🌐 Open-Meteo Core</span>
+                <span class="warning-chip">⚡ CYBER BAROMETRICS</span>
+                <span class="api-chip" id="dataSourceBadge">🌐 WeatherAPI Core</span>
             </div>
         </div>
 
@@ -445,7 +490,7 @@
 
         <div id="loadingOverlay" class="loading-state">
             <div class="spinner"></div>
-            <p style="color:#94a3b8;">Fetching real-time weather & pollutants ...</p>
+            <p style="color:#94a3b8;">Parsing structural weather vectors ...</p>
         </div>
 
         <div id="dashboard" style="display: none;">
@@ -479,6 +524,15 @@
                     <div style="font-size:0.7rem; text-align:center; color:#94a3b8;" id="countdownText">⏱️ Next refresh: 60:00</div>
                 </div>
 
+                <div class="trend-card">
+                    <div style="font-weight: 700; font-size: 0.9rem; margin-bottom: 0.5rem;">🔮 High-Resolution 3-Hour Forecast</div>
+                    <div class="trend-grid" id="trendForecastGrid">
+                        <div class="trend-item"><div class="trend-time">+1 Hr</div><div class="trend-temp">--</div><div class="trend-desc">--</div></div>
+                        <div class="trend-item"><div class="trend-time">+2 Hr</div><div class="trend-temp">--</div><div class="trend-desc">--</div></div>
+                        <div class="trend-item"><div class="trend-time">+3 Hr</div><div class="trend-temp">--</div><div class="trend-desc">--</div></div>
+                    </div>
+                </div>
+
                 <div class="baro-card">
                     <div><span style="font-weight:600; color:#94a3b8;">⏲️ Barometric trend</span><br><span id="pressTrendLabel" style="font-weight:bold; color:#f8fafc;">Steady</span></div>
                     <div><span style="font-weight:600; color:#94a3b8;">🚨 Storm index</span><br><span id="stormAdvice" style="color:#f8fafc;">Nominal</span></div>
@@ -496,17 +550,16 @@
                     </div>
                     <div id="airAdvice" style="font-size:0.7rem; margin-top:10px; color:#94a3b8;">✅ Air quality advisory</div>
                 </div>
-                <div class="footer-note" id="sourceTimestamp">🔄 Live data integration</div>
+                <div class="footer-note" id="sourceTimestamp">🔄 Core Live Integration</div>
             </div>
         </div>
     </div>
 </div>
 
 <script>
-    // ---------- API & GLOBALS ----------
-    const OPENWEATHER_KEY = "7c0a902b340d75756e247c288128bfa4";
+    // ---------- API CONFIGURATIONS ----------
+    const WEATHERAPI_KEY = "d219235f3b74414e89f55817260706";
     let countdownTimer = null;
-    let lastPressureHistory = [];
 
     const dashboard = document.getElementById('dashboard');
     const loadingDiv = document.getElementById('loadingOverlay');
@@ -535,14 +588,14 @@
             return;
         }
         try {
-            const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=8&language=en&format=json`;
+            const url = `https://api.weatherapi.com/v1/search.json?key=${WEATHERAPI_KEY}&q=${encodeURIComponent(query)}`;
             const response = await fetch(url);
             const data = await response.json();
-            if (!data.results || data.results.length === 0) {
+            if (!data || data.length === 0) {
                 suggestionsDiv.style.display = 'none';
                 return;
             }
-            renderSuggestions(data.results);
+            renderSuggestions(data);
         } catch (err) {
             console.warn(err);
             suggestionsDiv.style.display = 'none';
@@ -551,18 +604,14 @@
 
     function renderSuggestions(results) {
         suggestionsDiv.innerHTML = '';
-        if (!results.length) {
-            suggestionsDiv.style.display = 'none';
-            return;
-        }
         results.forEach(loc => {
             const div = document.createElement('div');
             div.className = 'suggestion-item';
-            div.innerHTML = `<span class="suggestion-name">${loc.name}</span><span class="suggestion-country">${loc.country} ${loc.admin1 ? `, ${loc.admin1}` : ''}</span>`;
+            div.innerHTML = `<span class="suggestion-name">${loc.name}</span><span class="suggestion-country">${loc.country}${loc.region ? `, ${loc.region}` : ''}</span>`;
             div.addEventListener('click', () => {
                 cityInput.value = `${loc.name}, ${loc.country}`;
                 suggestionsDiv.style.display = 'none';
-                fetchWeatherByCoordinates(loc.latitude, loc.longitude, `${loc.name}, ${loc.country}`);
+                fetchWeatherData(`${loc.lat},${loc.lon}`, `${loc.name}, ${loc.country}`);
             });
             suggestionsDiv.appendChild(div);
         });
@@ -582,96 +631,108 @@
         }, 320);
     });
 
-    // ---------- MODERN WEATHER API MAPPING ----------
-    async function geocodeExactCity(cityName) {
-        const resp = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(cityName)}&count=1&language=en&format=json`);
-        const data = await resp.json();
-        if (!data.results || data.results.length === 0) throw new Error("Location not found");
-        return { lat: data.results[0].latitude, lon: data.results[0].longitude, name: data.results[0].name, country: data.results[0].country };
-    }
+    // ---------- DATA INTEGRATION METRICS ----------
+    async function fetchWeatherData(queryParameter, placeName) {
+        setLoading(true);
+        try {
+            // Fetch Primary Data from WeatherAPI.com (Includes Forecast & Air Quality metrics)
+            const primaryUrl = `https://api.weatherapi.com/v1/forecast.json?key=${WEATHERAPI_KEY}&q=${encodeURIComponent(queryParameter)}&days=1&aqi=yes`;
+            const primaryRes = await fetch(primaryUrl);
+            if (!primaryRes.ok) throw new Error("WeatherAPI core down or rejected structural request");
+            const wData = await primaryRes.json();
 
-    async function fetchWeatherOpenMeteo(lat, lon, placeName) {
-        const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,rain,showers,snowfall,weather_code,cloud_cover,pressure_msl,surface_pressure,wind_speed_10m&hourly=pressure_msl&timezone=auto`;
-        const weatherRes = await fetch(weatherUrl);
-        if (!weatherRes.ok) throw new Error("Open-Meteo core connection failed");
-        const weatherData = await weatherRes.json();
-        
-        const curr = weatherData.current;
-        if (!curr) throw new Error("Invalid payload design structure");
+            // Extract primary layers
+            const current = wData.current;
+            const location = wData.location;
+            const hourForecasts = wData.forecast.forecastday[0].hour;
 
-        let humidity = curr.relative_humidity_2m ?? 65;
-        let pressure = curr.pressure_msl ?? 1013;
-        let hourlyPressures = [];
-        
-        if (weatherData.hourly && weatherData.hourly.pressure_msl) {
-            hourlyPressures = weatherData.hourly.pressure_msl;
+            // Map standard coordinates for strict tracking updates
+            const currentHourIndex = new Date(current.last_updated).getHours();
+            
+            // Build historical pressure array for trend analysis engine
+            let pressureHistoryArr = [];
+            for(let i = 0; i <= currentHourIndex; i++) {
+                if(hourForecasts[i]) pressureHistoryArr.push(hourForecasts[i].pressure_mb);
+            }
+
+            // Calculations parsing using risk compute algorithm
+            const mappedInputData = {
+                temp: current.temp_c,
+                windSpeed: current.wind_kph,
+                humidity: current.humidity,
+                pressure: current.pressure_mb,
+                weatherCode: current.condition.code,
+                text: current.condition.text
+            };
+
+            const { risk, severity, pressureTendText, stormMsg } = computeRiskAndPressure(mappedInputData, pressureHistoryArr);
+
+            // Interface manipulation mappings
+            document.getElementById('tempDisplay').innerHTML = `${Math.round(current.temp_c)}°C`;
+            document.getElementById('conditionLabel').innerHTML = `${current.condition.text}`;
+            document.getElementById('locationName').innerHTML = `📍 ${placeName || location.name}`;
+            document.getElementById('windVal').innerHTML = `${Math.round(current.wind_kph)} km/h`;
+            document.getElementById('humVal').innerHTML = `${Math.round(current.humidity)}%`;
+            document.getElementById('pressVal').innerHTML = `${Math.round(current.pressure_mb)} hPa`;
+            document.getElementById('riskIndexVal').innerHTML = risk >= 55 ? "EXTREME" : risk >= 24 ? "HIGH" : risk >= 10 ? "MODERATE" : "LOW";
+
+            // Process Predictive Trend Items (+1, +2, +3 Hours out)
+            renderThreeHourTrend(hourForecasts, currentHourIndex);
+
+            // Handle panel state modifiers
+            const predModule = document.getElementById('predictionModule');
+            predModule.classList.remove('severity-severe','severity-warning','severity-safe');
+            if (severity === 'severe') predModule.classList.add('severity-severe');
+            else if (severity === 'warning') predModule.classList.add('severity-warning');
+            else predModule.classList.add('severity-safe');
+
+            document.getElementById('alertTitle').innerHTML = severity === 'severe' ? "🚨 SEVERE ALERT: Take Action" : (severity === 'warning' ? "⚠️ Weather Warning" : "✅ Moderate Conditions");
+            document.getElementById('alertDesc').innerHTML = severity === 'severe' ? `Destructive potential. Risk ${Math.round(risk)}%.` : `${stormMsg}`;
+            updateGaugeUI(risk);
+
+            document.getElementById('pressTrendLabel').innerHTML = pressureTendText;
+            document.getElementById('stormAdvice').innerHTML = stormMsg;
+
+            // Handle Air Quality Mapping
+            displayPollutionMetrics(current.air_quality);
+
+            // Setup real-time countdown looping parameters
+            resetLoopTimer(queryParameter, placeName);
+            
+            document.getElementById('sourceTimestamp').innerHTML = `📡 WeatherAPI Metrics Engine • ${new Date().toLocaleTimeString()}`;
+            if(severity === "severe") showAlertMsg(`🔴 SEVERE RISK: ${stormMsg}`, true);
+
+        } catch (err) {
+            showAlertMsg(`Pipeline connection failure: ${err.message}`, false);
+            console.error(err);
+        } finally {
+            setLoading(false);
         }
-        
-        let airQualityData = null;
-        try {
-            const aqResp = await fetch(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&hourly=pm10,pm2_5,nitrogen_dioxide,ozone,sulphur_dioxide&timezone=auto`);
-            if (aqResp.ok) airQualityData = await aqResp.json();
-        } catch(e) { console.warn("AQI call skipped or failed structurally", e); }
-
-        return {
-            success: true,
-            data: {
-                temp: curr.temperature_2m,
-                windSpeed: curr.wind_speed_10m,
-                humidity: humidity,
-                pressure: pressure,
-                weatherCode: curr.weather_code,
-                hourlyPressure: hourlyPressures,
-                airQuality: airQualityData,
-                locationName: placeName
-            }
-        };
     }
 
-    async function fetchOpenWeatherFallback(lat, lon, placeName) {
-        const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${OPENWEATHER_KEY}&units=metric`;
-        const resp = await fetch(url);
-        if (!resp.ok) throw new Error("OWM fallback link error");
-        const data = await resp.json();
-        let pressure = data.main.pressure;
-        let humidity = data.main.humidity;
-        let windKmph = data.wind.speed * 3.6;
-        let weatherCode = 0;
-        const id = data.weather[0].id;
-        if (id >= 200 && id < 300) weatherCode = 95;
-        else if (id >= 300 && id < 600) weatherCode = 61;
-        else if (id >= 600 && id < 700) weatherCode = 71;
-        else if (id >= 700 && id < 800) weatherCode = 45;
-        else if (id === 800) weatherCode = 0;
-        else if (id === 801) weatherCode = 1;
-        else if (id >= 802) weatherCode = 3;
-        let airQuality = null;
-        try {
-            const aqCall = await fetch(`https://api.openweathermap.org/data/2.5/air_pollution?lat=${lat}&lon=${lon}&appid=${OPENWEATHER_KEY}`);
-            if (aqCall.ok) airQuality = await aqCall.json();
-        } catch(e) {}
-        return {
-            success: true,
-            data: {
-                temp: data.main.temp,
-                windSpeed: windKmph,
-                humidity: humidity,
-                pressure: pressure,
-                weatherCode: weatherCode,
-                hourlyPressure: [pressure, pressure, pressure, pressure],
-                airQuality: airQuality,
-                locationName: data.name || placeName
-            }
-        };
-    }
+    function renderThreeHourTrend(hoursArray, startHour) {
+        const gridContainer = document.getElementById('trendForecastGrid');
+        gridContainer.innerHTML = '';
 
-    function getConditionEmoji(code) {
-        if (code >= 95) return "⛈️ Thunderstorm";
-        if (code >= 61 && code <= 67) return "🌧️ Rain";
-        if (code >= 71 && code <= 77) return "❄️ Snow";
-        if (code >= 45 && code <= 48) return "🌫️ Fog";
-        if (code <= 3) return code === 0 ? "☀️ Clear Sky" : "⛅ Partly cloudy";
-        return "🌤️ Variable";
+        for (let i = 1; i <= 3; i++) {
+            let targetHour = (startHour + i) % 24;
+            let hourData = hoursArray[targetHour];
+            
+            if (hourData) {
+                const item = document.createElement('div');
+                item.className = 'trend-item';
+                
+                // Format displayable time format window
+                let displayTime = hourData.time.split(' ')[1];
+                
+                item.innerHTML = `
+                    <div class="trend-time">${displayTime}</div>
+                    <div class="trend-temp">${Math.round(hourData.temp_c)}°C</div>
+                    <div class="trend-desc" title="${hourData.condition.text}">${hourData.condition.text}</div>
+                `;
+                gridContainer.appendChild(item);
+            }
+        }
     }
 
     function computeRiskAndPressure(data, pressureHistoryArr) {
@@ -679,37 +740,33 @@
         const wind = data.windSpeed || 0;
         const humidity = data.humidity || 0;
         const pressure = data.pressure || 1013;
-        const code = data.weatherCode || 0;
         let pressureTrend = 0;
 
-        // Compare current hour forecasting maps safely to preserve risk velocity metrics
         if (pressureHistoryArr && pressureHistoryArr.length > 1) {
-            const currentHour = new Date().getHours();
-            const prevPressure = pressureHistoryArr[Math.max(0, currentHour - 1)] || pressure;
-            pressureTrend = pressure - prevPressure;
+            const currentPressure = pressure;
+            const pastPressure = pressureHistoryArr[pressureHistoryArr.length - 2] || currentPressure;
+            pressureTrend = currentPressure - pastPressure;
         }
 
-        // 1. Base Pressure Weights
         if (pressure < 1000) risk += 28;
         else if (pressure < 1008) risk += 14;
 
-        // 2. Barometric Velocity Shifts
         if (pressureTrend <= -2.5) risk += 22;
         else if (pressureTrend < -0.7) risk += 10;
 
-        // 3. Wind Scale Metrics
         if (wind > 70) risk += 38;
         else if (wind > 45) risk += 24;
         else if (wind > 30) risk += 12;
         else if (wind > 15) risk += 5; 
 
-        // 4. Incident Code Analysis
-        if (code >= 95) risk += 32;
-        else if (code >= 61) risk += 15; 
+        // Specific weather code severity evaluation rules matching WeatherAPI schemas
+        const conditionTextLower = data.text.toLowerCase();
+        if (conditionTextLower.includes("thunder") || conditionTextLower.includes("storm")) risk += 35;
+        else if (conditionTextLower.includes("heavy") || conditionTextLower.includes("torrential")) risk += 20;
+        else if (conditionTextLower.includes("rain") || conditionTextLower.includes("shower")) risk += 10;
         
         if (humidity > 85 && data.temp > 27) risk += 12;
 
-        if (isNaN(risk)) risk = 0;
         risk = Math.max(0, Math.min(100, risk));
 
         let severity = "safe";
@@ -717,25 +774,24 @@
         else if (risk >= 24) severity = "warning";
 
         let pressureTendText = "Stable";
-        let stormMsg = "Atmospheric equilibrium";
+        let stormMsg = "Atmospheric equilibrium verified";
 
         if (pressureTrend <= -2) { 
             pressureTendText = "📉 Rapid falling"; 
-            stormMsg = "Low pressure incoming – storm potential"; 
+            stormMsg = "Deep drop detected – imminent dynamic shift"; 
         } else if (pressureTrend < -0.2) { 
             pressureTendText = "⬇️ Falling slowly"; 
-            stormMsg = "Unstable trend developing"; 
+            stormMsg = "Unstable standard trend parameters"; 
         } else if (pressureTrend > 0.2) {
-            pressureTendText = "⬆️ Rising";
-            stormMsg = "Clearing skies ahead";
+            pressureTendText = "⬆️ Rising profiles";
+            stormMsg = "Clearing anti-cyclonic properties manifest";
         }
         
-        if (pressure < 1003) stormMsg = "🌀 Cyclonic signature - severe watch";
+        if (pressure < 1003) stormMsg = "🌀 Cyclonic signature - severe validation watch active";
         
         return { risk, severity, pressureTendText, stormMsg };
     }
 
-    // FIXED: Explicitly structural comma separation allows targeted matrix scaling strictly around (70,70) pivot point
     function updateGaugeUI(riskPercent) {
         const validRisk = isNaN(riskPercent) ? 0 : Math.max(0, Math.min(100, riskPercent));
         const circumference = 365;
@@ -745,167 +801,78 @@
         
         const needle = document.getElementById('needleGauge');
         const angle = -125 + (validRisk / 100) * 250;
-        if (needle) {
-            needle.setAttribute('transform', `rotate(${angle}, 70, 70)`);
-        }
+        if (needle) needle.setAttribute('transform', `rotate(${angle}, 70, 70)`);
         
         const percentText = document.getElementById('gaugePercent');
-        if (percentText) {
-            percentText.innerText = `${Math.round(validRisk)}%`;
-        }
+        if (percentText) percentText.innerText = `${Math.round(validRisk)}%`;
     }
 
-    function displayPollution(airQuality, sourceFlag) {
-        if (!airQuality) {
-            document.getElementById('pm25Val').innerText = '--'; document.getElementById('pm10Val').innerText = '--';
-            document.getElementById('no2Val').innerText = '--'; document.getElementById('o3Val').innerText = '--';
-            document.getElementById('so2Val').innerText = '--'; document.getElementById('coVal').innerText = '--';
-            document.getElementById('airAdvice').innerHTML = "⚠️ Air quality data unavailable";
+    function displayPollutionMetrics(aqiObj) {
+        if (!aqiObj) {
+            document.getElementById('airAdvice').innerHTML = "⚠️ Air Quality Matrix unavailable";
             return;
         }
-        let pm25 = 0, pm10 = 0, no2 = 0, o3 = 0, so2 = 0, coVal = 0;
-        
-        if (sourceFlag === "openmeteo" && airQuality.hourly) {
-            const currentHourStr = new Date().toISOString().substring(0, 13) + ":00";
-            let idx = airQuality.hourly.time?.indexOf(currentHourStr);
-            if (idx === -1 || idx === undefined) idx = 0;
 
-            pm25 = airQuality.hourly.pm2_5?.[idx] || 0;
-            pm10 = airQuality.hourly.pm10?.[idx] || 0;
-            no2 = airQuality.hourly.nitrogen_dioxide?.[idx] || 0;
-            o3 = airQuality.hourly.ozone?.[idx] || 0;
-            so2 = airQuality.hourly.sulphur_dioxide?.[idx] || 0;
-        } else if (sourceFlag === "openweather" && airQuality.list) {
-            const comp = airQuality.list[0].components;
-            pm25 = comp.pm2_5 || 0; pm10 = comp.pm10 || 0; no2 = comp.no2 || 0; o3 = comp.o3 || 0; so2 = comp.so2 || 0; coVal = comp.co || 0;
-            const aqi = airQuality.list[0].main.aqi;
-            let aqiText = "Good", bgAqi = "#10b981";
-            if (aqi === 2) { aqiText = "Fair"; bgAqi = "#f59e0b"; }
-            else if (aqi === 3) { aqiText = "Moderate"; bgAqi = "#ea580c"; }
-            else if (aqi >= 4) { aqiText = "Poor"; bgAqi = "#dc2626"; }
-            document.getElementById('aqiLevelBadge').innerHTML = aqiText;
-            document.getElementById('aqiLevelBadge').style.background = bgAqi;
-            document.getElementById('pm25Val').innerHTML = `${Math.round(pm25)} µg/m³`;
-            document.getElementById('pm10Val').innerHTML = `${Math.round(pm10)} µg/m³`;
-            document.getElementById('no2Val').innerHTML = `${Math.round(no2)} µg/m³`;
-            document.getElementById('o3Val').innerHTML = `${Math.round(o3)} µg/m³`;
-            document.getElementById('so2Val').innerHTML = `${Math.round(so2)} µg/m³`;
-            document.getElementById('coVal').innerHTML = coVal ? `${Math.round(coVal)} µg/m³` : '--';
-            document.getElementById('airAdvice').innerHTML = pm25 > 55 ? "⚠️ Unhealthy air quality. Limit outdoor time." : "✅ Acceptable air quality.";
-            return;
-        }
+        const pm25 = aqiObj.pm2_5 || 0;
+        const pm10 = aqiObj.pm10 || 0;
+        const no2 = aqiObj.no2 || 0;
+        const o3 = aqiObj.o3 || 0;
+        const so2 = aqiObj.so2 || 0;
+        const co = aqiObj.co || 0;
+
+        document.getElementById('pm25Val').innerHTML = `${Math.round(pm25)}`;
+        document.getElementById('pm10Val').innerHTML = `${Math.round(pm10)}`;
+        document.getElementById('no2Val').innerHTML = `${Math.round(no2)}`;
+        document.getElementById('o3Val').innerHTML = `${Math.round(o3)}`;
+        document.getElementById('so2Val').innerHTML = `${Math.round(so2)}`;
+        document.getElementById('coVal').innerHTML = `${Math.round(co)}`;
+
         let aqiText = "Good", bgAqi = "#10b981";
-        if(pm25 > 150) { aqiText = "Hazardous"; bgAqi = "#dc2626"; }
-        else if(pm25 > 55) { aqiText = "Unhealthy"; bgAqi = "#ea580c"; }
-        else if(pm25 > 35) { aqiText = "Moderate"; bgAqi = "#f59e0b"; }
-        document.getElementById('aqiLevelBadge').innerHTML = aqiText;
-        document.getElementById('aqiLevelBadge').style.background = bgAqi;
-        document.getElementById('pm25Val').innerHTML = `${Math.round(pm25)} µg/m³`;
-        document.getElementById('pm10Val').innerHTML = `${Math.round(pm10)} µg/m³`;
-        document.getElementById('no2Val').innerHTML = `${Math.round(no2)} µg/m³`;
-        document.getElementById('o3Val').innerHTML = `${Math.round(o3)} µg/m³`;
-        document.getElementById('so2Val').innerHTML = `${Math.round(so2)} µg/m³`;
-        document.getElementById('coVal').innerHTML = `--`;
-        document.getElementById('airAdvice').innerHTML = pm25 > 100 ? "🚨 Very poor air quality. Stay indoors." : "🌿 Normal air levels.";
+        if (pm25 > 150) { aqiText = "Hazardous"; bgAqi = "#dc2626"; }
+        else if (pm25 > 55) { aqiText = "Unhealthy"; bgAqi = "#ea580c"; }
+        else if (pm25 > 35) { aqiText = "Moderate"; bgAqi = "#f59e0b"; }
+
+        const badge = document.getElementById('aqiLevelBadge');
+        badge.innerHTML = aqiText;
+        badge.style.background = bgAqi;
+
+        document.getElementById('airAdvice').innerHTML = pm25 > 55 ? "⚠️ Elevated particulates. Minimize respiratory exposure." : "🌿 Safe environment indexes logged.";
     }
 
-    async function fetchWeatherByCoordinates(lat, lon, displayName) {
-        setLoading(true);
-        try {
-            let result;
-            let source = "openmeteo";
-            try {
-                result = await fetchWeatherOpenMeteo(lat, lon, displayName);
-            } catch (omErr) {
-                console.warn("Switching to secondary backup protocol...", omErr);
-                result = await fetchOpenWeatherFallback(lat, lon, displayName);
-                source = "openweather";
-            }
-            
-            if (source === "openweather") {
-                dataSourceSpan.innerHTML = "🌐 OpenWeather (Backup)";
-                dataSourceSpan.style.background = "rgba(249, 115, 22, 0.2)";
-                dataSourceSpan.style.color = "#fb923c";
-                dataSourceSpan.style.borderColor = "rgba(249, 115, 22, 0.4)";
+    function resetLoopTimer(queryParam, placeName) {
+        if (countdownTimer) clearInterval(countdownTimer);
+        let secondsLeft = 3600;
+        const countdownSpan = document.getElementById('countdownText');
+        
+        countdownTimer = setInterval(() => {
+            if (secondsLeft <= 0) {
+                clearInterval(countdownTimer);
+                fetchWeatherData(queryParam, placeName);
             } else {
-                dataSourceSpan.innerHTML = "🌐 Open-Meteo + AQI";
-                dataSourceSpan.style.background = "rgba(56, 189, 248, 0.15)";
-                dataSourceSpan.style.color = "#38bdf8";
-                dataSourceSpan.style.borderColor = "rgba(56, 189, 248, 0.3)";
+                const mins = Math.floor(secondsLeft / 60).toString().padStart(2, '0');
+                const secs = (secondsLeft % 60).toString().padStart(2, '0');
+                countdownSpan.innerText = `⏱️ Auto-refresh: ${mins}:${secs}`;
+                secondsLeft--;
             }
-            
-            const wData = result.data;
-            lastPressureHistory = wData.hourlyPressure || [wData.pressure];
-            const { risk, severity, pressureTendText, stormMsg } = computeRiskAndPressure(wData, lastPressureHistory);
-            
-            document.getElementById('tempDisplay').innerHTML = `${Math.round(wData.temp)}°C`;
-            document.getElementById('conditionLabel').innerHTML = getConditionEmoji(wData.weatherCode);
-            document.getElementById('locationName').innerHTML = `📍 ${wData.locationName}`;
-            document.getElementById('windVal').innerHTML = `${Math.round(wData.windSpeed)} km/h`;
-            document.getElementById('humVal').innerHTML = `${Math.round(wData.humidity)}%`;
-            document.getElementById('pressVal').innerHTML = `${Math.round(wData.pressure)} hPa`;
-            document.getElementById('riskIndexVal').innerHTML = risk >= 55 ? "EXTREME" : risk >= 24 ? "HIGH" : risk >= 10 ? "MODERATE" : "LOW";
-            
-            const predModule = document.getElementById('predictionModule');
-            predModule.classList.remove('severity-severe','severity-warning','severity-safe');
-            if (severity === 'severe') predModule.classList.add('severity-severe');
-            else if (severity === 'warning') predModule.classList.add('severity-warning');
-            else predModule.classList.add('severity-safe');
-            
-            document.getElementById('alertTitle').innerHTML = severity === 'severe' ? "🚨 SEVERE ALERT: Take Action" : (severity === 'warning' ? "⚠️ Weather Warning" : "✅ Moderate Conditions");
-            document.getElementById('alertDesc').innerHTML = severity === 'severe' ? `Destructive potential. Risk ${Math.round(risk)}%.` : (severity === 'warning' ? `${stormMsg}` : `Stable pattern, but stay aware.`);
-            updateGaugeUI(risk);
-            
-            document.getElementById('pressTrendLabel').innerHTML = pressureTendText;
-            document.getElementById('stormAdvice').innerHTML = stormMsg;
-            displayPollution(wData.airQuality, source);
-            
-            if (countdownTimer) clearInterval(countdownTimer);
-            let secondsLeft = 3600;
-            const countdownSpan = document.getElementById('countdownText');
-            countdownTimer = setInterval(() => {
-                if (secondsLeft <= 0) {
-                    clearInterval(countdownTimer);
-                    countdownSpan.innerText = "⏱️ Refreshing...";
-                    fetchWeatherByCoordinates(lat, lon, displayName);
-                } else {
-                    const mins = Math.floor(secondsLeft / 60);
-                    const secs = secondsLeft % 60;
-                    const paddedMins = mins.toString().padStart(2, '0');
-                    const paddedSecs = secs.toString().padStart(2, '0');
-                    countdownSpan.innerText = `⏱️ Auto-refresh: ${paddedMins}:${paddedSecs}`;
-                    secondsLeft--;
-                }
-            }, 1000);
-            
-            document.getElementById('sourceTimestamp').innerHTML = `📡 ${source === "openmeteo" ? "Open-Meteo + AQ" : "OpenWeatherMap"} • ${new Date().toLocaleTimeString()}`;
-            if(severity === "severe") showAlertMsg(`🔴 SEVERE RISK: ${stormMsg}. Take precautions.`, true);
-            else if(severity === "warning") showAlertMsg(`⚠️ Weather advisory: ${stormMsg}`, false);
-        } catch (err) {
-            showAlertMsg(`Weather error: ${err.message}`, false);
-        } finally {
-            setLoading(false);
-        }
+        }, 1000);
     }
 
     async function onSearchSubmit() {
         const raw = cityInput.value.trim();
         if (!raw) return;
-        try {
-            const geo = await geocodeExactCity(raw.split(',')[0]);
-            await fetchWeatherByCoordinates(geo.lat, geo.lon, `${geo.name}, ${geo.country}`);
-            suggestionsDiv.style.display = 'none';
-        } catch (err) {
-            showAlertMsg(`Location not found: ${raw}`, false);
-        }
+        await fetchWeatherData(raw.split(',')[0], raw);
+        suggestionsDiv.style.display = 'none';
     }
 
     function onLocationClick() {
         if (!navigator.geolocation) return showAlertMsg("Geolocation unsupported");
         setLoading(true);
         navigator.geolocation.getCurrentPosition(async (pos) => {
-            await fetchWeatherByCoordinates(pos.coords.latitude, pos.coords.longitude, "Your Live Location");
-        }, () => { showAlertMsg("Location access denied. Search manually.", false); setLoading(false); });
+            await fetchWeatherData(`${pos.coords.latitude},${pos.coords.longitude}`, "Your Live Location");
+        }, () => { 
+            showAlertMsg("Location access denied. Search manually.", false); 
+            setLoading(false); 
+        });
     }
 
     document.getElementById('searchBtn').addEventListener('click', onSearchSubmit);
@@ -925,8 +892,11 @@
         containerPart.appendChild(p);
     }
     
-    // Initial load default
-    (async () => { await fetchWeatherByCoordinates(35.6895, 139.6917, "Tokyo, Japan"); cityInput.value = "Tokyo, Japan"; })();
+    // Initial load parameters pointing to standard initialization vector
+    (async () => { 
+        await fetchWeatherData("Tokyo", "Tokyo, Japan"); 
+        cityInput.value = "Tokyo, Japan"; 
+    })();
 </script>
 </body>
 </html>
