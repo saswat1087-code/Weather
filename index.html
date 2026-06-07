@@ -682,34 +682,33 @@
         const code = data.weatherCode || 0;
         let pressureTrend = 0;
 
-        // FIXED: Maps exactly against current structural timeline arrays to secure a healthy trend comparison
+        // Compare current hour forecasting maps safely to preserve risk velocity metrics
         if (pressureHistoryArr && pressureHistoryArr.length > 1) {
             const currentHour = new Date().getHours();
             const prevPressure = pressureHistoryArr[Math.max(0, currentHour - 1)] || pressure;
             pressureTrend = pressure - prevPressure;
         }
 
-        // 1. Base Pressure Risk Metrics
+        // 1. Base Pressure Weights
         if (pressure < 1000) risk += 28;
         else if (pressure < 1008) risk += 14;
 
-        // 2. Barometric Velocity Risk
+        // 2. Barometric Velocity Shifts
         if (pressureTrend <= -2.5) risk += 22;
         else if (pressureTrend < -0.7) risk += 10;
 
-        // 3. Kinetic Wind Threshold Matrix
+        // 3. Wind Scale Metrics
         if (wind > 70) risk += 38;
         else if (wind > 45) risk += 24;
         else if (wind > 30) risk += 12;
         else if (wind > 15) risk += 5; 
 
-        // 4. Diagnostic Code Assessment
+        // 4. Incident Code Analysis
         if (code >= 95) risk += 32;
         else if (code >= 61) risk += 15; 
         
         if (humidity > 85 && data.temp > 27) risk += 12;
 
-        // Safety bounding checks
         if (isNaN(risk)) risk = 0;
         risk = Math.max(0, Math.min(100, risk));
 
@@ -736,17 +735,24 @@
         return { risk, severity, pressureTendText, stormMsg };
     }
 
+    // FIXED: Explicitly structural comma separation allows targeted matrix scaling strictly around (70,70) pivot point
     function updateGaugeUI(riskPercent) {
+        const validRisk = isNaN(riskPercent) ? 0 : Math.max(0, Math.min(100, riskPercent));
         const circumference = 365;
-        const offset = circumference - (riskPercent / 100) * circumference;
+        const offset = circumference - (validRisk / 100) * circumference;
         const arc = document.getElementById('gaugeArcFill');
         if (arc) arc.style.strokeDashoffset = offset;
         
         const needle = document.getElementById('needleGauge');
-        const angle = -125 + (riskPercent / 100) * 250;
-        if (needle) needle.setAttribute('transform', `rotate(${angle} 70 70)`);
+        const angle = -125 + (validRisk / 100) * 250;
+        if (needle) {
+            needle.setAttribute('transform', `rotate(${angle}, 70, 70)`);
+        }
         
-        document.getElementById('gaugePercent').innerText = `${Math.round(riskPercent)}%`;
+        const percentText = document.getElementById('gaugePercent');
+        if (percentText) {
+            percentText.innerText = `${Math.round(validRisk)}%`;
+        }
     }
 
     function displayPollution(airQuality, sourceFlag) {
