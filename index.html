@@ -20,7 +20,6 @@
             overflow-x: hidden;
         }
 
-        /* animated atmospheric particles */
         .particles {
             position: fixed;
             top: 0;
@@ -60,7 +59,6 @@
             border-radius: 2.8rem;
             border: 1px solid rgba(71, 85, 105, 0.45);
             box-shadow: 0 30px 55px -15px rgba(0, 0, 0, 0.6);
-            transition: all 0.2s ease;
         }
 
         .header {
@@ -291,6 +289,10 @@
             font-size: 0.9rem;
             box-shadow: 0 8px 20px #00000050;
         }
+        .temp-error {
+            color: #f87171;
+            font-size: 0.8rem;
+        }
         @media (max-width: 620px) {
             .metrics-grid { grid-template-columns: 1fr; }
             .forecast-grid { gap: 0.6rem; }
@@ -417,7 +419,15 @@
             if (dashboard) dashboard.style.display = show ? 'none' : 'block'; 
         }
 
-        // Autocomplete with open-meteo geocoding
+        // Safe number formatter for temperatures
+        function formatTemp(value, defaultValue = '--') {
+            if (value === undefined || value === null || isNaN(value)) {
+                return defaultValue;
+            }
+            return `${Math.round(value)}°C`;
+        }
+
+        // Autocomplete
         let debounceTimer = null;
         async function getSuggestions(query) {
             if (!query || query.length < 2) { if(suggestionsDiv) suggestionsDiv.style.display = 'none'; return; }
@@ -453,20 +463,30 @@
             }
         });
 
-        // CORE WEATHER + AI RISK ENGINE with CORRECTED hourly indexing
+        // MAIN FORECAST FUNCTION WITH FIXED TEMPERATURE HANDLING
         async function fetchForecast(lat, lon, placeLabel) {
             setLoading(true);
             try {
                 const forecastUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,relative_humidity_2m,precipitation_probability,wind_speed_10m,wind_gusts_10m,pressure_msl&current=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,pressure_msl,weather_code&timezone=auto`;
                 const resp = await fetch(forecastUrl);
-                if (!resp.ok) throw new Error("Weather data unavailable");
+                if (!resp.ok) throw new Error(`Weather API error: ${resp.status}`);
                 const data = await resp.json();
                 
                 const current = data.current;
                 const hourly = data.hourly;
-                if (!current || !hourly) throw new Error("Forecast missing");
+                
+                if (!current) throw new Error("No current weather data");
+                if (!hourly || !hourly.time) throw new Error("No hourly forecast data");
 
-                // ---- FIX: Proper timestamp-based indexing for next hours ----
+                // FIX: Validate current temperature exists
+                let currentTemp = current.temperature_2m;
+                if (currentTemp === undefined || currentTemp === null || isNaN(currentTemp)) {
+                    console.warn("Current temperature missing, using fallback");
+                    currentTemp = 20; // Fallback reasonable value
+                    showToast("Temperature data temporarily unavailable", false);
+                }
+
+                // Find correct hourly indices
                 const currentTime = new Date(current.time);
                 let currentHourIndex = -1;
                 for (let i = 0; i < hourly.time.length; i++) {
@@ -477,16 +497,16 @@
                         break;
                     }
                 }
-                // fallback: if not found, assume index 0 is current hour
+                
                 const startIdx = (currentHourIndex !== -1) ? currentHourIndex + 1 : 1;
                 
                 const getHour = (offset) => {
                     const idx = startIdx + offset;
                     return {
-                        temp: hourly.temperature_2m?.[idx] ?? current.temperature_2m,
-                        rainProb: hourly.precipitation_probability?.[idx] ?? 0,
-                        wind: hourly.wind_speed_10m?.[idx] ?? current.wind_speed_10m,
-                        gust: hourly.wind_gusts_10m?.[idx] ?? current.wind_gusts_10m ?? current.wind_speed_10m
+                        temp: (hourly.temperature_2m && hourly.temperature_2m[idx] !== undefined) ? hourly.temperature_2m[idx] : currentTemp,
+                        rainProb: (hourly.precipitation_probability && hourly.precipitation_probability[idx] !== undefined) ? hourly.precipitation_probability[idx] : 0,
+                        wind: (hourly.wind_speed_10m && hourly.wind_speed_10m[idx] !== undefined) ? hourly.wind_speed_10m[idx] : (current.wind_speed_10m || 0),
+                        gust: (hourly.wind_gusts_10m && hourly.wind_gusts_10m[idx] !== undefined) ? hourly.wind_gusts_10m[idx] : (current.wind_gusts_10m || current.wind_speed_10m || 0)
                     };
                 };
                 
@@ -494,25 +514,44 @@
                 const h2 = getHour(1);
                 const h3 = getHour(2);
                 
-                // Update DOM forecasts (next 3 hours)
-                if (document.getElementById('f1Temp')) document.getElementById('f1Temp').innerHTML = `${Math.round(h1.temp)}°C`;
-                if (document.getElementById('f1Rain')) document.getElementById('f1Rain').innerHTML = `💧 ${Math.round(h1.rainProb)}%`;
-                if (document.getElementById('f1Wind')) document.getElementById('f1Wind').innerHTML = `🌬️ ${Math.round(h1.wind)} km/h`;
-                if (document.getElementById('f2Temp')) document.getElementById('f2Temp').innerHTML = `${Math.round(h2.temp)}°C`;
-                if (document.getElementById('f2Rain')) document.getElementById('f2Rain').innerHTML = `💧 ${Math.round(h2.rainProb)}%`;
-                if (document.getElementById('f2Wind')) document.getElementById('f2Wind').innerHTML = `🌬️ ${Math.round(h2.wind)} km/h`;
-                if (document.getElementById('f3Temp')) document.getElementById('f3Temp').innerHTML = `${Math.round(h3.temp)}°C`;
-                if (document.getElementById('f3Rain')) document.getElementById('f3Rain').innerHTML = `💧 ${Math.round(h3.rainProb)}%`;
-                if (document.getElementById('f3Wind')) document.getElementById('f3Wind').innerHTML = `🌬️ ${Math.round(h3.wind)} km/h`;
-
-                // Current conditions
-                document.getElementById('tempDisplay').innerHTML = `${Math.round(current.temperature_2m)}°C`;
-                document.getElementById('humVal').innerHTML = `${Math.round(current.relative_humidity_2m)}%`;
-                document.getElementById('pressVal').innerHTML = `${Math.round(current.pressure_msl)} hPa`;
-                document.getElementById('windGustVal').innerHTML = `${Math.round(current.wind_speed_10m)} / ${Math.round(current.wind_gusts_10m || current.wind_speed_10m)} km/h`;
-                document.getElementById('locationName').innerHTML = `📍 ${placeLabel}`;
+                // Update forecast displays with validation
+                const f1Temp = document.getElementById('f1Temp');
+                const f2Temp = document.getElementById('f2Temp');
+                const f3Temp = document.getElementById('f3Temp');
+                const tempDisplay = document.getElementById('tempDisplay');
                 
-                // Enhanced weather condition mapping
+                if (f1Temp) f1Temp.innerHTML = formatTemp(h1.temp);
+                if (f2Temp) f2Temp.innerHTML = formatTemp(h2.temp);
+                if (f3Temp) f3Temp.innerHTML = formatTemp(h3.temp);
+                if (tempDisplay) tempDisplay.innerHTML = formatTemp(currentTemp);
+                
+                // Update other forecast values
+                const f1Rain = document.getElementById('f1Rain');
+                const f1Wind = document.getElementById('f1Wind');
+                const f2Rain = document.getElementById('f2Rain');
+                const f2Wind = document.getElementById('f2Wind');
+                const f3Rain = document.getElementById('f3Rain');
+                const f3Wind = document.getElementById('f3Wind');
+                
+                if (f1Rain) f1Rain.innerHTML = `💧 ${Math.round(h1.rainProb)}%`;
+                if (f1Wind) f1Wind.innerHTML = `🌬️ ${Math.round(h1.wind)} km/h`;
+                if (f2Rain) f2Rain.innerHTML = `💧 ${Math.round(h2.rainProb)}%`;
+                if (f2Wind) f2Wind.innerHTML = `🌬️ ${Math.round(h2.wind)} km/h`;
+                if (f3Rain) f3Rain.innerHTML = `💧 ${Math.round(h3.rainProb)}%`;
+                if (f3Wind) f3Wind.innerHTML = `🌬️ ${Math.round(h3.wind)} km/h`;
+
+                // Current conditions with validation
+                const humVal = document.getElementById('humVal');
+                const pressVal = document.getElementById('pressVal');
+                const windGustVal = document.getElementById('windGustVal');
+                const locationName = document.getElementById('locationName');
+                
+                if (humVal) humVal.innerHTML = current.relative_humidity_2m !== undefined ? `${Math.round(current.relative_humidity_2m)}%` : '--%';
+                if (pressVal) pressVal.innerHTML = current.pressure_msl !== undefined ? `${Math.round(current.pressure_msl)} hPa` : '-- hPa';
+                if (windGustVal) windGustVal.innerHTML = `${Math.round(current.wind_speed_10m || 0)} / ${Math.round(current.wind_gusts_10m || current.wind_speed_10m || 0)} km/h`;
+                if (locationName) locationName.innerHTML = `📍 ${placeLabel}`;
+                
+                // Weather condition mapping
                 let conditionText = "☀️ Clear";
                 const wc = current.weather_code;
                 if (wc >= 95) conditionText = "⛈️ Thunderstorm";
@@ -523,16 +562,23 @@
                 else if (wc === 3) conditionText = "⛅ Overcast";
                 else if (wc === 2) conditionText = "🌤️ Partly Cloudy";
                 else if (wc <= 1) conditionText = "☀️ Clear Sky";
-                document.getElementById('conditionLabel').innerHTML = conditionText;
+                
+                const conditionLabel = document.getElementById('conditionLabel');
+                if (conditionLabel) conditionLabel.innerHTML = conditionText;
 
-                // CAPE instability (robust estimation)
-                let capeBase = Math.min(3800, Math.max(0, (current.temperature_2m - 18) * 28 + (current.relative_humidity_2m - 45) * 6 + (h1.rainProb > 45 ? 280 : 0) + (wc >= 95 ? 550 : 0)));
+                // CAPE estimation using validated temperature
+                const safeTemp = (currentTemp !== undefined && !isNaN(currentTemp)) ? currentTemp : 20;
+                const safeHumidity = (current.relative_humidity_2m !== undefined && !isNaN(current.relative_humidity_2m)) ? current.relative_humidity_2m : 50;
+                
+                let capeBase = Math.min(3800, Math.max(0, (safeTemp - 18) * 28 + (safeHumidity - 45) * 6 + (h1.rainProb > 45 ? 280 : 0) + (wc >= 95 ? 550 : 0)));
                 capeBase = Math.round(capeBase);
-                document.getElementById('capeVal').innerHTML = `${capeBase} J/kg`;
+                const capeVal = document.getElementById('capeVal');
+                if (capeVal) capeVal.innerHTML = `${capeBase} J/kg`;
 
-                // ----- Advanced AI Risk Score (0-100) with precise factors-----
+                // Risk score calculation
                 let risk = 0;
                 const riskFactors = [];
+                
                 if (h1.rainProb > 75) { risk += 32; riskFactors.push(`🌊 Extreme precip next hour (${Math.round(h1.rainProb)}%)`); }
                 else if (h1.rainProb > 50) { risk += 20; riskFactors.push(`🌧️ Heavy rain within 60min (${Math.round(h1.rainProb)}%)`); }
                 else if (h1.rainProb > 25) { risk += 10; riskFactors.push(`💧 Moderate rain potential (${Math.round(h1.rainProb)}%)`); }
@@ -542,33 +588,41 @@
                 else if (peakGust > 52) { risk += 22; riskFactors.push(`🌬️ Strong damaging gusts (${Math.round(peakGust)} km/h)`); }
                 else if (peakGust > 35) { risk += 12; riskFactors.push(`🍃 Gusty winds (${Math.round(peakGust)} km/h)`); }
 
-                if (capeBase > 2100) { risk += 24; riskFactors.push(`⚡ Extreme instability (CAPE ${capeBase} J/kg) — severe storm risk`); }
-                else if (capeBase > 1200) { risk += 15; riskFactors.push(`⛈️ High instability (${capeBase} J/kg), thunder possible`); }
+                if (capeBase > 2100) { risk += 24; riskFactors.push(`⚡ Extreme instability (CAPE ${capeBase} J/kg)`); }
+                else if (capeBase > 1200) { risk += 15; riskFactors.push(`⛈️ High instability (${capeBase} J/kg)`); }
                 else if (capeBase > 550) { risk += 8; riskFactors.push(`🌩️ Moderate instability`); }
                 
                 const avgRain3h = (h1.rainProb + h2.rainProb + h3.rainProb)/3;
                 if (avgRain3h > 65) { risk += 12; riskFactors.push(`📊 Persistent rain threat next 3 hours`); }
-                if (wc >= 95 || current.weather_code === 96) { risk += 28; riskFactors.push(`⛈️ Active thunderstorm signature`); }
+                if (wc >= 95 || wc === 96) { risk += 28; riskFactors.push(`⛈️ Active thunderstorm signature`); }
 
                 risk = Math.min(100, Math.max(0, risk));
                 let severity = risk >= 58 ? "severe" : (risk >= 28 ? "warning" : "safe");
+                
                 const predDiv = document.getElementById('predictionModule');
-                predDiv.classList.remove('severity-severe', 'severity-warning', 'severity-safe');
-                predDiv.classList.add(`severity-${severity}`);
+                if (predDiv) {
+                    predDiv.classList.remove('severity-severe', 'severity-warning', 'severity-safe');
+                    predDiv.classList.add(`severity-${severity}`);
+                }
                 
                 const alertTitle = document.getElementById('alertTitle');
                 const alertDesc = document.getElementById('alertDesc');
-                if (severity === "severe") alertTitle.innerHTML = "🚨 RED ALERT: Take Shelter Now";
-                else if (severity === "warning") alertTitle.innerHTML = "⚠️ WEATHER WARNING: Prepare for Impact";
-                else alertTitle.innerHTML = "✅ STABLE: Low immediate threat";
+                
+                if (alertTitle) {
+                    if (severity === "severe") alertTitle.innerHTML = "🚨 RED ALERT: Take Shelter Now";
+                    else if (severity === "warning") alertTitle.innerHTML = "⚠️ WEATHER WARNING: Prepare for Impact";
+                    else alertTitle.innerHTML = "✅ STABLE: Low immediate threat";
+                }
+                
+                if (alertDesc) {
+                    let advisoryMsg = `Risk index ${Math.round(risk)}% · ${Math.round(h1.rainProb)}% rain + gusts up to ${Math.round(peakGust)} km/h. `;
+                    if (severity === "severe") advisoryMsg += "Dangerous conditions expected within 1 hour. Avoid travel.";
+                    else if (severity === "warning") advisoryMsg += "Stay alert for sudden changes.";
+                    else advisoryMsg += "No major storm signals in short term.";
+                    alertDesc.innerHTML = advisoryMsg;
+                }
 
-                let advisoryMsg = `Risk index ${Math.round(risk)}% · ${Math.round(h1.rainProb)}% rain + gusts up to ${Math.round(peakGust)} km/h. `;
-                if (severity === "severe") advisoryMsg += "Dangerous conditions expected within 1 hour. Avoid travel.";
-                else if (severity === "warning") advisoryMsg += "Stay alert for sudden changes.";
-                else advisoryMsg += "No major storm signals in short term.";
-                alertDesc.innerHTML = advisoryMsg;
-
-                // Update gauge and needle
+                // Update gauge
                 const circumference = 365;
                 const dashOffset = circumference - (risk / 100) * circumference;
                 const arcFill = document.getElementById('gaugeArcFill');
@@ -576,11 +630,13 @@
                 const angle = -125 + (risk / 100) * 250;
                 const needle = document.getElementById('needleGauge');
                 if (needle) needle.setAttribute('transform', `rotate(${angle} 70 70)`);
-                document.getElementById('gaugePercent').innerText = `${Math.round(risk)}%`;
+                const gaugePercent = document.getElementById('gaugePercent');
+                if (gaugePercent) gaugePercent.innerText = `${Math.round(risk)}%`;
+                
                 const factorsList = document.getElementById('riskFactorsList');
                 if (factorsList) factorsList.innerHTML = riskFactors.length ? riskFactors.join("  •  ") : "✅ No severe trigger factors detected.";
 
-                // Air Quality Integration (with CO display fix)
+                // Air Quality
                 try {
                     const aqiFetch = await fetch(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=pm10,pm2_5,nitrogen_dioxide,ozone,sulphur_dioxide,carbon_monoxide`);
                     if (aqiFetch.ok) {
@@ -591,26 +647,35 @@
                         const o3 = aqiData.current?.ozone ?? 0;
                         const so2 = aqiData.current?.sulphur_dioxide ?? 0;
                         const co = aqiData.current?.carbon_monoxide ?? 0;
-                        document.getElementById('pm25Val').innerHTML = `${Math.round(pm25)} µg/m³`;
-                        document.getElementById('pm10Val').innerHTML = `${Math.round(pm10)} µg/m³`;
-                        document.getElementById('no2Val').innerHTML = `${Math.round(no2)} µg/m³`;
-                        document.getElementById('o3Val').innerHTML = `${Math.round(o3)} µg/m³`;
-                        document.getElementById('so2Val').innerHTML = `${Math.round(so2)} µg/m³`;
-                        document.getElementById('coVal').innerHTML = `${Math.round(co)} µg/m³`;
+                        
+                        const pm25El = document.getElementById('pm25Val');
+                        const pm10El = document.getElementById('pm10Val');
+                        const no2El = document.getElementById('no2Val');
+                        const o3El = document.getElementById('o3Val');
+                        const so2El = document.getElementById('so2Val');
+                        const coEl = document.getElementById('coVal');
+                        
+                        if (pm25El) pm25El.innerHTML = `${Math.round(pm25)} µg/m³`;
+                        if (pm10El) pm10El.innerHTML = `${Math.round(pm10)} µg/m³`;
+                        if (no2El) no2El.innerHTML = `${Math.round(no2)} µg/m³`;
+                        if (o3El) o3El.innerHTML = `${Math.round(o3)} µg/m³`;
+                        if (so2El) so2El.innerHTML = `${Math.round(so2)} µg/m³`;
+                        if (coEl) coEl.innerHTML = `${Math.round(co)} µg/m³`;
                         
                         let aqiLabel = "Good";
                         let bgColor = "#10b981";
                         if (pm25 > 130) { aqiLabel = "Hazardous"; bgColor = "#dc2626"; }
                         else if (pm25 > 55) { aqiLabel = "Unhealthy"; bgColor = "#ea580c"; }
                         else if (pm25 > 35) { aqiLabel = "Moderate"; bgColor = "#f59e0b"; }
+                        
                         const badge = document.getElementById('aqiLevelBadge');
                         if (badge) { badge.innerHTML = aqiLabel; badge.style.background = bgColor; }
                         const adviceDiv = document.getElementById('airAdvice');
                         if (adviceDiv) adviceDiv.innerHTML = pm25 > 60 ? "😷 Poor AQI: consider masks & limit outdoor activity" : "🌿 Air quality satisfactory for outdoor activity.";
-                    } else { console.log("AQI api not reachable"); }
-                } catch(e) { console.warn("Air quality fetch skipped"); }
+                    }
+                } catch(e) { console.warn("Air quality fetch skipped:", e); }
 
-                // Auto-refresh countdown (1 hour)
+                // Countdown timer
                 if (countdownInterval) clearInterval(countdownInterval);
                 let secondsLeft = 3600;
                 const countSpan = document.getElementById('countdownText');
@@ -628,13 +693,20 @@
 
                 const timeStampDiv = document.getElementById('sourceTimestamp');
                 if (timeStampDiv) timeStampDiv.innerHTML = `⚡ StormSense AI · forecast valid as of ${new Date().toLocaleTimeString()}`;
+                
                 activeCoords = { lat, lon, name: placeLabel };
+                
                 if (severity === "severe") showToast(`🚨 SEVERE STORM ALERT: ${Math.round(h1.rainProb)}% rain, gusts ${Math.round(peakGust)} km/h. Immediate action!`, true);
                 else if (severity === "warning") showToast(`⚠️ Warning: next hour volatile conditions · stay alert`, false);
+                
             } catch (err) {
-                console.error(err);
+                console.error("Forecast error:", err);
                 showToast(`Forecast error: ${err.message}`, false);
-            } finally { setLoading(false); }
+                // Show dashboard with error state but keep UI functional
+                if (dashboard) dashboard.style.display = 'block';
+            } finally { 
+                setLoading(false); 
+            }
         }
 
         async function searchCity() {
@@ -648,7 +720,10 @@
                 const loc = geoJson.results[0];
                 await fetchForecast(loc.latitude, loc.longitude, `${loc.name}, ${loc.country}`);
                 if (suggestionsDiv) suggestionsDiv.style.display = 'none';
-            } catch(e) { showToast(`Location error: ${e.message}`); setLoading(false); }
+            } catch(e) { 
+                showToast(`Location error: ${e.message}`); 
+                setLoading(false);
+            }
         }
 
         function useMyLocation() {
@@ -657,27 +732,36 @@
             navigator.geolocation.getCurrentPosition(async (position) => {
                 await fetchForecast(position.coords.latitude, position.coords.longitude, "📍 Your Position");
                 if (cityInput) cityInput.value = "My Location";
-            }, () => { showToast("Location denied or error"); setLoading(false); });
+            }, () => { 
+                showToast("Location denied or error"); 
+                setLoading(false);
+            });
         }
 
-        document.getElementById('searchBtn')?.addEventListener('click', searchCity);
-        document.getElementById('locationBtn')?.addEventListener('click', useMyLocation);
-        cityInput?.addEventListener('keypress', e => { if (e.key === 'Enter') searchCity(); });
+        // Event listeners
+        const searchBtn = document.getElementById('searchBtn');
+        const locationBtn = document.getElementById('locationBtn');
+        
+        if (searchBtn) searchBtn.addEventListener('click', searchCity);
+        if (locationBtn) locationBtn.addEventListener('click', useMyLocation);
+        if (cityInput) cityInput.addEventListener('keypress', e => { if (e.key === 'Enter') searchCity(); });
 
-        // generate floating particles
+        // Particles
         const partCont = document.getElementById('particlesContainer');
-        for (let i=0;i<70;i++) {
-            let p = document.createElement('div');
-            p.classList.add('particle');
-            p.style.width = `${Math.random() * 8 + 2}px`;
-            p.style.height = p.style.width;
-            p.style.left = `${Math.random() * 100}%`;
-            p.style.animationDuration = `${Math.random() * 13 + 6}s`;
-            p.style.animationDelay = `${Math.random() * 7}s`;
-            partCont.appendChild(p);
+        if (partCont) {
+            for (let i = 0; i < 70; i++) {
+                let p = document.createElement('div');
+                p.classList.add('particle');
+                p.style.width = `${Math.random() * 8 + 2}px`;
+                p.style.height = p.style.width;
+                p.style.left = `${Math.random() * 100}%`;
+                p.style.animationDuration = `${Math.random() * 13 + 6}s`;
+                p.style.animationDelay = `${Math.random() * 7}s`;
+                partCont.appendChild(p);
+            }
         }
 
-        // Default load: Kolkata, India
+        // Default: Kolkata
         fetchForecast(22.5726, 88.3639, "Kolkata, India");
         if (cityInput) cityInput.value = "Kolkata, India";
     })();
