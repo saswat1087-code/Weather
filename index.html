@@ -112,6 +112,7 @@
             font-size: 0.7rem;
             font-weight: 600;
             border: 1px solid rgba(56, 189, 248, 0.3);
+            transition: all 0.3s ease;
         }
 
         .location-panel {
@@ -490,7 +491,7 @@
 
         <div id="loadingOverlay" class="loading-state">
             <div class="spinner"></div>
-            <p style="color:#94a3b8;">Parsing structural weather vectors ...</p>
+            <p style="color:#94a3b8;" id="loadingText">Parsing structural weather vectors ...</p>
         </div>
 
         <div id="dashboard" style="display: none;">
@@ -563,6 +564,7 @@
 
     const dashboard = document.getElementById('dashboard');
     const loadingDiv = document.getElementById('loadingOverlay');
+    const loadingText = document.getElementById('loadingText');
     const alertBox = document.getElementById('liveAlert');
     const dataSourceSpan = document.getElementById('dataSourceBadge');
     const cityInput = document.getElementById('cityInput');
@@ -575,9 +577,23 @@
         setTimeout(() => { alertBox.style.display = 'none'; }, 5000);
     }
 
-    function setLoading(show) {
+    function setLoading(show, text = "Parsing structural weather vectors ...") {
+        loadingText.innerText = text;
         loadingDiv.style.display = show ? 'flex' : 'none';
         dashboard.style.display = show ? 'none' : 'block';
+    }
+
+    // WMO Weather Code Translator for Open-Meteo Fallback
+    function translateWMOCode(code) {
+        if (code === 0) return "Clear Sky";
+        if (code === 1 || code === 2 || code === 3) return "Partly Cloudy";
+        if (code === 45 || code === 48) return "Foggy Conditions";
+        if (code >= 51 && code <= 55) return "Light Drizzle";
+        if (code >= 61 && code <= 65) return "Rain Showers";
+        if (code >= 71 && code <= 75) return "Snow Flakes";
+        if (code >= 80 && code <= 82) return "Heavy Showers";
+        if (code >= 95) return "Thunderstorms";
+        return "Variable Clouds";
     }
 
     // ---------- AUTOCOMPLETE SUGGESTIONS ----------
@@ -588,22 +604,34 @@
             return;
         }
         try {
+            // WeatherAPI Geocoding Engine used primarily
             const url = `https://api.weatherapi.com/v1/search.json?key=${WEATHERAPI_KEY}&q=${encodeURIComponent(query)}`;
             const response = await fetch(url);
+            if (!response.ok) throw new Error();
             const data = await response.json();
-            if (!data || data.length === 0) {
-                suggestionsDiv.style.display = 'none';
-                return;
-            }
             renderSuggestions(data);
         } catch (err) {
-            console.warn(err);
-            suggestionsDiv.style.display = 'none';
+            // Open-Meteo Geocoding Secondary Backup Fallback Channel
+            try {
+                const altUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=5&language=en&format=json`;
+                const altResp = await fetch(altUrl);
+                const altData = await altResp.json();
+                if(altData.results) {
+                    const normalized = altData.results.map(i => ({ name: i.name, country: i.country, region: i.admin1, lat: i.latitude, lon: i.longitude }));
+                    renderSuggestions(normalized);
+                }
+            } catch(e) {
+                suggestionsDiv.style.display = 'none';
+            }
         }
     }
 
     function renderSuggestions(results) {
         suggestionsDiv.innerHTML = '';
+        if (!results || results.length === 0) {
+            suggestionsDiv.style.display = 'none';
+            return;
+        }
         results.forEach(loc => {
             const div = document.createElement('div');
             div.className = 'suggestion-item';
@@ -611,7 +639,7 @@
             div.addEventListener('click', () => {
                 cityInput.value = `${loc.name}, ${loc.country}`;
                 suggestionsDiv.style.display = 'none';
-                fetchWeatherData(`${loc.lat},${loc.lon}`, `${loc.name}, ${loc.country}`);
+                fetchWeatherData(`${loc.lat},${loc.lon}`, `${loc.name}, ${loc.country}`, loc.lat, loc.lon);
             });
             suggestionsDiv.appendChild(div);
         });
@@ -631,102 +659,162 @@
         }, 320);
     });
 
-    // ---------- DATA INTEGRATION METRICS ----------
-    async function fetchWeatherData(queryParameter, placeName) {
-        setLoading(true);
+    // ---------- MASTER DATA ORCHESTRATION PIPELINE ----------
+    async function fetchWeatherData(queryParameter, placeName, optLat=null, optLon=null) {
+        setLoading(true, "Contacting WeatherAPI infrastructure...");
         try {
-            // Fetch Primary Data from WeatherAPI.com (Includes Forecast & Air Quality metrics)
+            // Primary Attempt Pathway
             const primaryUrl = `https://api.weatherapi.com/v1/forecast.json?key=${WEATHERAPI_KEY}&q=${encodeURIComponent(queryParameter)}&days=1&aqi=yes`;
             const primaryRes = await fetch(primaryUrl);
-            if (!primaryRes.ok) throw new Error("WeatherAPI core down or rejected structural request");
-            const wData = await primaryRes.json();
-
-            // Extract primary layers
-            const current = wData.current;
-            const location = wData.location;
-            const hourForecasts = wData.forecast.forecastday[0].hour;
-
-            // Map standard coordinates for strict tracking updates
-            const currentHourIndex = new Date(current.last_updated).getHours();
             
-            // Build historical pressure array for trend analysis engine
-            let pressureHistoryArr = [];
-            for(let i = 0; i <= currentHourIndex; i++) {
-                if(hourForecasts[i]) pressureHistoryArr.push(hourForecasts[i].pressure_mb);
+            if (!primaryRes.ok) {
+                throw new Error(`WeatherAPI Dropdown: Status ${primaryRes.status}`);
             }
-
-            // Calculations parsing using risk compute algorithm
-            const mappedInputData = {
-                temp: current.temp_c,
-                windSpeed: current.wind_kph,
-                humidity: current.humidity,
-                pressure: current.pressure_mb,
-                weatherCode: current.condition.code,
-                text: current.condition.text
-            };
-
-            const { risk, severity, pressureTendText, stormMsg } = computeRiskAndPressure(mappedInputData, pressureHistoryArr);
-
-            // Interface manipulation mappings
-            document.getElementById('tempDisplay').innerHTML = `${Math.round(current.temp_c)}°C`;
-            document.getElementById('conditionLabel').innerHTML = `${current.condition.text}`;
-            document.getElementById('locationName').innerHTML = `📍 ${placeName || location.name}`;
-            document.getElementById('windVal').innerHTML = `${Math.round(current.wind_kph)} km/h`;
-            document.getElementById('humVal').innerHTML = `${Math.round(current.humidity)}%`;
-            document.getElementById('pressVal').innerHTML = `${Math.round(current.pressure_mb)} hPa`;
-            document.getElementById('riskIndexVal').innerHTML = risk >= 55 ? "EXTREME" : risk >= 24 ? "HIGH" : risk >= 10 ? "MODERATE" : "LOW";
-
-            // Process Predictive Trend Items (+1, +2, +3 Hours out)
-            renderThreeHourTrend(hourForecasts, currentHourIndex);
-
-            // Handle panel state modifiers
-            const predModule = document.getElementById('predictionModule');
-            predModule.classList.remove('severity-severe','severity-warning','severity-safe');
-            if (severity === 'severe') predModule.classList.add('severity-severe');
-            else if (severity === 'warning') predModule.classList.add('severity-warning');
-            else predModule.classList.add('severity-safe');
-
-            document.getElementById('alertTitle').innerHTML = severity === 'severe' ? "🚨 SEVERE ALERT: Take Action" : (severity === 'warning' ? "⚠️ Weather Warning" : "✅ Moderate Conditions");
-            document.getElementById('alertDesc').innerHTML = severity === 'severe' ? `Destructive potential. Risk ${Math.round(risk)}%.` : `${stormMsg}`;
-            updateGaugeUI(risk);
-
-            document.getElementById('pressTrendLabel').innerHTML = pressureTendText;
-            document.getElementById('stormAdvice').innerHTML = stormMsg;
-
-            // Handle Air Quality Mapping
-            displayPollutionMetrics(current.air_quality);
-
-            // Setup real-time countdown looping parameters
-            resetLoopTimer(queryParameter, placeName);
             
-            document.getElementById('sourceTimestamp').innerHTML = `📡 WeatherAPI Metrics Engine • ${new Date().toLocaleTimeString()}`;
-            if(severity === "severe") showAlertMsg(`🔴 SEVERE RISK: ${stormMsg}`, true);
+            const wData = await primaryRes.json();
+            parseWeatherAPIPayload(wData, placeName, queryParameter);
 
         } catch (err) {
-            showAlertMsg(`Pipeline connection failure: ${err.message}`, false);
-            console.error(err);
+            console.warn("WeatherAPI channel disruption detected. Executing failover sequence...", err);
+            
+            // Extract spatial vectors if geocoded data isn't explicit
+            let fallbackLat = optLat;
+            let fallbackLon = optLon;
+
+            if (!fallbackLat || !fallbackLon) {
+                try {
+                    // Quick resolve step via Open-Meteo Geocoding API string conversion
+                    const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(queryParameter.split(',')[0])}&count=1&format=json`;
+                    const geoRes = await fetch(geoUrl);
+                    const geoData = await geoRes.json();
+                    if(geoData.results && geoData.results[0]) {
+                        fallbackLat = geoData.results[0].latitude;
+                        fallbackLon = geoData.results[0].longitude;
+                        if(!placeName) placeName = `${geoData.results[0].name}, ${geoData.results[0].country}`;
+                    }
+                } catch(geoErr) {
+                    fallbackLat = 35.6895; // Absolute static defaults to protect dashboard render runtime
+                    fallbackLon = 139.6917;
+                    placeName = "Tokyo, Japan";
+                }
+            }
+
+            // Fire Open-Meteo Layout Channel fallback architecture
+            await runOpenMeteoFailoverPipeline(fallbackLat, fallbackLon, placeName, queryParameter);
         } finally {
             setLoading(false);
         }
     }
 
-    function renderThreeHourTrend(hoursArray, startHour) {
+    // ---------- LAYOUT HANDLERS ----------
+    function parseWeatherAPIPayload(wData, placeName, originalQuery) {
+        // Adjust badge styles dynamically to verify data pipeline pathing
+        dataSourceSpan.innerHTML = "🌐 WeatherAPI Core";
+        dataSourceSpan.style.background = "rgba(56, 189, 248, 0.15)";
+        dataSourceSpan.style.color = "#38bdf8";
+        dataSourceSpan.style.borderColor = "rgba(56, 189, 248, 0.3)";
+
+        const current = wData.current;
+        const location = wData.location;
+        const hourForecasts = wData.forecast.forecastday[0].hour;
+        const currentHourIndex = new Date(current.last_updated).getHours();
+        
+        let pressureHistoryArr = [];
+        for(let i = 0; i <= currentHourIndex; i++) {
+            if(hourForecasts[i]) pressureHistoryArr.push(hourForecasts[i].pressure_mb);
+        }
+
+        const mappedInputData = {
+            temp: current.temp_c,
+            windSpeed: current.wind_kph,
+            humidity: current.humidity,
+            pressure: current.pressure_mb,
+            text: current.condition.text
+        };
+
+        const { risk, severity, pressureTendText, stormMsg } = computeRiskAndPressure(mappedInputData, pressureHistoryArr);
+
+        document.getElementById('tempDisplay').innerHTML = `${Math.round(current.temp_c)}°C`;
+        document.getElementById('conditionLabel').innerHTML = `${current.condition.text}`;
+        document.getElementById('locationName').innerHTML = `📍 ${placeName || location.name}`;
+        document.getElementById('windVal').innerHTML = `${Math.round(current.wind_kph)} km/h`;
+        document.getElementById('humVal').innerHTML = `${Math.round(current.humidity)}%`;
+        document.getElementById('pressVal').innerHTML = `${Math.round(current.pressure_mb)} hPa`;
+        document.getElementById('riskIndexVal').innerHTML = risk >= 55 ? "EXTREME" : risk >= 24 ? "HIGH" : risk >= 10 ? "MODERATE" : "LOW";
+
+        renderThreeHourTrendWeatherAPI(hourForecasts, currentHourIndex);
+        updateDashboardAlertStructures(risk, severity, pressureTendText, stormMsg);
+        displayPollutionWeatherAPI(current.air_quality);
+        resetLoopTimer(originalQuery, placeName, optLat=location.lat, optLon=location.lon);
+    }
+
+    async function runOpenMeteoFailoverPipeline(lat, lon, displayName, originalQuery) {
+        showAlertMsg("Failover Triggered: Switched to Open-Meteo secondary matrix channel.");
+        
+        dataSourceSpan.innerHTML = "🔗 Open-Meteo Fallback";
+        dataSourceSpan.style.background = "rgba(16, 185, 129, 0.15)";
+        dataSourceSpan.style.color = "#10b981";
+        dataSourceSpan.style.borderColor = "rgba(16, 185, 129, 0.3)";
+
+        setLoading(true, "Connecting to emergency Open-Meteo clusters...");
+        
+        const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,weather_code,pressure_msl,wind_speed_10m&hourly=temperature_2m,pressure_msl,weather_code&timezone=auto`;
+        const weatherRes = await fetch(weatherUrl);
+        if(!weatherRes.ok) throw new Error("Secondary Open-Meteo fallback stack down.");
+        const omData = await weatherRes.json();
+
+        // Query Secondary Air Quality cluster
+        let aqData = null;
+        try {
+            const aqResp = await fetch(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&hourly=pm10,pm2_5,nitrogen_dioxide,ozone,sulphur_dioxide&timezone=auto`);
+            if (aqResp.ok) aqData = await aqResp.json();
+        } catch(e) { console.warn("AQI drop skipped during failover process loop", e); }
+
+        const current = omData.current;
+        const currentHourIndex = new Date().getHours();
+        const conditionString = translateWMOCode(current.weather_code);
+
+        // Map pressure sequence history logs safely
+        let pressureHistoryArr = omData.hourly.pressure_msl.slice(0, currentHourIndex + 1);
+
+        const mappedInputData = {
+            temp: current.temperature_2m,
+            windSpeed: current.wind_speed_10m,
+            humidity: current.relative_humidity_2m,
+            pressure: current.pressure_msl,
+            text: conditionString
+        };
+
+        const { risk, severity, pressureTendText, stormMsg } = computeRiskAndPressure(mappedInputData, pressureHistoryArr);
+
+        // Core Layout mapping execution
+        document.getElementById('tempDisplay').innerHTML = `${Math.round(current.temperature_2m)}°C`;
+        document.getElementById('conditionLabel').innerHTML = conditionString;
+        document.getElementById('locationName').innerHTML = `📍 ${displayName}`;
+        document.getElementById('windVal').innerHTML = `${Math.round(current.wind_speed_10m)} km/h`;
+        document.getElementById('humVal').innerHTML = `${Math.round(current.relative_humidity_2m)}%`;
+        document.getElementById('pressVal').innerHTML = `${Math.round(current.pressure_msl)} hPa`;
+        document.getElementById('riskIndexVal').innerHTML = risk >= 55 ? "EXTREME" : risk >= 24 ? "HIGH" : risk >= 10 ? "MODERATE" : "LOW";
+
+        // Bind high resolution predictive 3-hour window from OpenMeteo array slices
+        renderThreeHourTrendOpenMeteo(omData.hourly, currentHourIndex);
+        updateDashboardAlertStructures(risk, severity, pressureTendText, stormMsg);
+        displayPollutionOpenMeteo(aqData);
+        resetLoopTimer(originalQuery, displayName, lat, lon);
+    }
+
+    // ---------- TREND BLOCK PRINTERS ----------
+    function renderThreeHourTrendWeatherAPI(hoursArray, startHour) {
         const gridContainer = document.getElementById('trendForecastGrid');
         gridContainer.innerHTML = '';
-
         for (let i = 1; i <= 3; i++) {
             let targetHour = (startHour + i) % 24;
             let hourData = hoursArray[targetHour];
-            
             if (hourData) {
                 const item = document.createElement('div');
                 item.className = 'trend-item';
-                
-                // Format displayable time format window
-                let displayTime = hourData.time.split(' ')[1];
-                
                 item.innerHTML = `
-                    <div class="trend-time">${displayTime}</div>
+                    <div class="trend-time">${hourData.time.split(' ')[1]}</div>
                     <div class="trend-temp">${Math.round(hourData.temp_c)}°C</div>
                     <div class="trend-desc" title="${hourData.condition.text}">${hourData.condition.text}</div>
                 `;
@@ -735,6 +823,29 @@
         }
     }
 
+    function renderThreeHourTrendOpenMeteo(hourlyData, startHour) {
+        const gridContainer = document.getElementById('trendForecastGrid');
+        gridContainer.innerHTML = '';
+        for (let i = 1; i <= 3; i++) {
+            let targetIndex = (startHour + i) % 24;
+            let rawTemp = hourlyData.temperature_2m[targetIndex];
+            let rawCode = hourlyData.weather_code[targetIndex];
+            
+            // Build temporary step visualization time variables
+            let computedTimeStr = `${targetIndex.toString().padStart(2, '0')}:00`;
+
+            const item = document.createElement('div');
+            item.className = 'trend-item';
+            item.innerHTML = `
+                <div class="trend-time">${computedTimeStr}</div>
+                <div class="trend-temp">${Math.round(rawTemp)}°C</div>
+                <div class="trend-desc" title="${translateWMOCode(rawCode)}">${translateWMOCode(rawCode)}</div>
+            `;
+            gridContainer.appendChild(item);
+        }
+    }
+
+    // ---------- ENGINE COMPUTE LOGIC ----------
     function computeRiskAndPressure(data, pressureHistoryArr) {
         let risk = 0;
         const wind = data.windSpeed || 0;
@@ -759,7 +870,6 @@
         else if (wind > 30) risk += 12;
         else if (wind > 15) risk += 5; 
 
-        // Specific weather code severity evaluation rules matching WeatherAPI schemas
         const conditionTextLower = data.text.toLowerCase();
         if (conditionTextLower.includes("thunder") || conditionTextLower.includes("storm")) risk += 35;
         else if (conditionTextLower.includes("heavy") || conditionTextLower.includes("torrential")) risk += 20;
@@ -792,6 +902,21 @@
         return { risk, severity, pressureTendText, stormMsg };
     }
 
+    function updateDashboardAlertStructures(risk, severity, pressureTendText, stormMsg) {
+        const predModule = document.getElementById('predictionModule');
+        predModule.classList.remove('severity-severe','severity-warning','severity-safe');
+        if (severity === 'severe') predModule.classList.add('severity-severe');
+        else if (severity === 'warning') predModule.classList.add('severity-warning');
+        else predModule.classList.add('severity-safe');
+
+        document.getElementById('alertTitle').innerHTML = severity === 'severe' ? "🚨 SEVERE ALERT: Take Action" : (severity === 'warning' ? "⚠️ Weather Warning" : "✅ Moderate Conditions");
+        document.getElementById('alertDesc').innerHTML = severity === 'severe' ? `Destructive potential. Risk ${Math.round(risk)}%.` : `${stormMsg}`;
+        updateGaugeUI(risk);
+
+        document.getElementById('pressTrendLabel').innerHTML = pressureTendText;
+        document.getElementById('stormAdvice').innerHTML = stormMsg;
+    }
+
     function updateGaugeUI(riskPercent) {
         const validRisk = isNaN(riskPercent) ? 0 : Math.max(0, Math.min(100, riskPercent));
         const circumference = 365;
@@ -807,25 +932,34 @@
         if (percentText) percentText.innerText = `${Math.round(validRisk)}%`;
     }
 
-    function displayPollutionMetrics(aqiObj) {
-        if (!aqiObj) {
-            document.getElementById('airAdvice').innerHTML = "⚠️ Air Quality Matrix unavailable";
-            return;
-        }
-
+    // ---------- AQI POLLUTION PARSERS ----------
+    function displayPollutionWeatherAPI(aqiObj) {
+        if (!aqiObj) return resetAQIViewUnavailable();
         const pm25 = aqiObj.pm2_5 || 0;
-        const pm10 = aqiObj.pm10 || 0;
-        const no2 = aqiObj.no2 || 0;
-        const o3 = aqiObj.o3 || 0;
-        const so2 = aqiObj.so2 || 0;
-        const co = aqiObj.co || 0;
+        processAQITagAndAdviceValues(pm25, aqiObj.pm10, aqiObj.no2, aqiObj.o3, aqiObj.so2, aqiObj.co);
+    }
 
-        document.getElementById('pm25Val').innerHTML = `${Math.round(pm25)}`;
-        document.getElementById('pm10Val').innerHTML = `${Math.round(pm10)}`;
-        document.getElementById('no2Val').innerHTML = `${Math.round(no2)}`;
-        document.getElementById('o3Val').innerHTML = `${Math.round(o3)}`;
-        document.getElementById('so2Val').innerHTML = `${Math.round(so2)}`;
-        document.getElementById('coVal').innerHTML = `${Math.round(co)}`;
+    function displayPollutionOpenMeteo(aqData) {
+        if (!aqData || !aqData.hourly) return resetAQIViewUnavailable();
+        const currentHour = new Date().getHours();
+        const h = aqData.hourly;
+        
+        const pm25 = h.pm2_5 ? h.pm2_5[currentHour] : 0;
+        const pm10 = h.pm10 ? h.pm10[currentHour] : 0;
+        const no2 = h.nitrogen_dioxide ? h.nitrogen_dioxide[currentHour] : 0;
+        const o3 = h.ozone ? h.ozone[currentHour] : 0;
+        const so2 = h.sulphur_dioxide ? h.sulphur_dioxide[currentHour] : 0;
+
+        processAQITagAndAdviceValues(pm25, pm10, no2, o3, so2, null);
+    }
+
+    function processAQITagAndAdviceValues(pm25, pm10, no2, o3, so2, co) {
+        document.getElementById('pm25Val').innerHTML = pm25 ? `${Math.round(pm25)}` : '--';
+        document.getElementById('pm10Val').innerHTML = pm10 ? `${Math.round(pm10)}` : '--';
+        document.getElementById('no2Val').innerHTML = no2 ? `${Math.round(no2)}` : '--';
+        document.getElementById('o3Val').innerHTML = o3 ? `${Math.round(o3)}` : '--';
+        document.getElementById('so2Val').innerHTML = so2 ? `${Math.round(so2)}` : '--';
+        document.getElementById('coVal').innerHTML = co ? `${Math.round(co)}` : '--';
 
         let aqiText = "Good", bgAqi = "#10b981";
         if (pm25 > 150) { aqiText = "Hazardous"; bgAqi = "#dc2626"; }
@@ -835,11 +969,15 @@
         const badge = document.getElementById('aqiLevelBadge');
         badge.innerHTML = aqiText;
         badge.style.background = bgAqi;
-
         document.getElementById('airAdvice').innerHTML = pm25 > 55 ? "⚠️ Elevated particulates. Minimize respiratory exposure." : "🌿 Safe environment indexes logged.";
     }
 
-    function resetLoopTimer(queryParam, placeName) {
+    function resetAQIViewUnavailable() {
+        document.getElementById('airAdvice').innerHTML = "⚠️ Air Quality Matrix unavailable";
+    }
+
+    // ---------- METRIC TIMERS ----------
+    function resetLoopTimer(queryParam, placeName, lat=null, lon=null) {
         if (countdownTimer) clearInterval(countdownTimer);
         let secondsLeft = 3600;
         const countdownSpan = document.getElementById('countdownText');
@@ -847,7 +985,7 @@
         countdownTimer = setInterval(() => {
             if (secondsLeft <= 0) {
                 clearInterval(countdownTimer);
-                fetchWeatherData(queryParam, placeName);
+                fetchWeatherData(queryParam, placeName, lat, lon);
             } else {
                 const mins = Math.floor(secondsLeft / 60).toString().padStart(2, '0');
                 const secs = (secondsLeft % 60).toString().padStart(2, '0');
@@ -866,9 +1004,9 @@
 
     function onLocationClick() {
         if (!navigator.geolocation) return showAlertMsg("Geolocation unsupported");
-        setLoading(true);
+        setLoading(true, "Polling geospatial tracking loops...");
         navigator.geolocation.getCurrentPosition(async (pos) => {
-            await fetchWeatherData(`${pos.coords.latitude},${pos.coords.longitude}`, "Your Live Location");
+            await fetchWeatherData(`${pos.coords.latitude},${pos.coords.longitude}`, "Your Live Location", pos.coords.latitude, pos.coords.longitude);
         }, () => { 
             showAlertMsg("Location access denied. Search manually.", false); 
             setLoading(false); 
@@ -892,9 +1030,9 @@
         containerPart.appendChild(p);
     }
     
-    // Initial load parameters pointing to standard initialization vector
+    // Auto initialization vector
     (async () => { 
-        await fetchWeatherData("Tokyo", "Tokyo, Japan"); 
+        await fetchWeatherData("Tokyo", "Tokyo, Japan", 35.6895, 139.6917); 
         cityInput.value = "Tokyo, Japan"; 
     })();
 </script>
